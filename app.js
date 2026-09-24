@@ -12,22 +12,50 @@ $('t-tot').textContent=fmt(C.DURATION_S);$('lbl-a').textContent=S[0].name;$('lbl
 function fmt(s){s=Math.round(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
 function warn(m){console.error(m);if(!/debug/.test(location.search))return; // red banner only when the URL has ?debug
   let b=document.getElementById('dbg');if(!b){b=document.createElement('div');b.id='dbg';b.style.cssText='position:fixed;left:8px;bottom:90px;z-index:99;max-width:70vw;background:#ce1126;color:#fff;font:11px monospace;padding:6px 8px;border-radius:6px';document.body.appendChild(b);}b.textContent=String(m).slice(0,300);}
-function trainIcon(){
-  const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');x.scale(2,2);
-  const rr=(a,b,w,h,r)=>{x.beginPath();x.roundRect(a,b,w,h,r);};
+function trainCanvas(){ // train pictogram + soft halo, drawn at runtime (self-contained, no external sprite)
+  const c=document.createElement('canvas');c.width=c.height=192;const x=c.getContext('2d');
+  const h=x.createRadialGradient(96,96,20,96,96,96);h.addColorStop(0,'rgba(252,209,22,.45)');h.addColorStop(1,'rgba(252,209,22,0)');x.fillStyle=h;x.fillRect(0,0,192,192);
+  x.translate(32,32);x.scale(2,2);
+  const rr=(a,b,w,h,r)=>{x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();};
   x.beginPath();x.arc(32,32,29.5,0,7);x.fillStyle='#fcd116';x.fill();x.lineWidth=3;x.strokeStyle='#071018';x.stroke();
-  x.fillStyle='#071018';rr(19,13,26,31,7);x.fill();               // carriage front
-  x.fillStyle='#fcd116';rr(23,18,18,11,3);x.fill();               // windscreen
-  x.beginPath();x.arc(26,37,2.4,0,7);x.arc(38,37,2.4,0,7);x.fill(); // headlights
+  x.fillStyle='#071018';rr(19,13,26,31,7);x.fill();
+  x.fillStyle='#fcd116';rr(23,18,18,11,3);x.fill();
+  x.beginPath();x.arc(26,37,2.4,0,7);x.arc(38,37,2.4,0,7);x.fill();
   x.strokeStyle='#071018';x.lineWidth=3;x.lineCap='round';
-  x.beginPath();x.moveTo(25,46);x.lineTo(19,54);x.moveTo(39,46);x.lineTo(45,54);x.stroke(); // rails
-  return x.getImageData(0,0,128,128);
+  x.beginPath();x.moveTo(25,46);x.lineTo(19,54);x.moveTo(39,46);x.lineTo(45,54);x.stroke();
+  return c;
 }
+// Train as a native GL custom layer: position is read from a JS variable at draw time, so there is zero
+// worker/GeoJSON latency (the cause of the train vanishing while playing on phones). Flat billboard, not a 3D model.
+const trainLayer={id:'train-gl',type:'custom',renderingMode:'3d',ok:false,pos:null,
+  onAdd(m,gl){
+    this.map=m;
+    const sh=(t,src)=>{const o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;};
+    const pr=gl.createProgram();
+    gl.attachShader(pr,sh(gl.VERTEX_SHADER,'uniform mat4 u_m;uniform vec3 u_p;uniform vec2 u_s;attribute vec2 a_c;varying vec2 v;void main(){vec4 c=u_m*vec4(u_p,1.0);c.xy+=a_c*u_s*c.w;v=vec2(a_c.x*.5+.5,.5-a_c.y*.5);gl_Position=c;}'));
+    gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,'precision mediump float;uniform sampler2D u_t;varying vec2 v;void main(){gl_FragColor=texture2D(u_t,v);}'));
+    gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw new Error('train shader link failed');
+    this.pr=pr;this.u={m:gl.getUniformLocation(pr,'u_m'),p:gl.getUniformLocation(pr,'u_p'),s:gl.getUniformLocation(pr,'u_s'),t:gl.getUniformLocation(pr,'u_t')};this.a=gl.getAttribLocation(pr,'a_c');
+    this.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+    this.tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,trainCanvas());gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    [[gl.TEXTURE_MIN_FILTER,gl.LINEAR],[gl.TEXTURE_MAG_FILTER,gl.LINEAR],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]].forEach(q=>gl.texParameteri(gl.TEXTURE_2D,q[0],q[1]));
+    this.ok=true;
+  },
+  render(gl,matrix){
+    if(!this.ok||!this.pos)return;
+    const cv=this.map.getCanvas(),sz=cv.clientWidth<600?84:104; // on-screen size in CSS px
+    gl.useProgram(this.pr);gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix4fv(this.u.m,false,matrix);gl.uniform3f(this.u.p,this.pos[0],this.pos[1],this.pos[2]);gl.uniform2f(this.u.s,sz/cv.clientWidth,sz/cv.clientHeight);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.uniform1i(this.u.t,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);gl.enableVertexAttribArray(this.a);gl.vertexAttribPointer(this.a,2,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);gl.disableVertexAttribArray(this.a);
+  }};
 sp(10);
-const map=new mapboxgl.Map({container:'map',style:'mapbox://styles/mapbox/satellite-streets-v12',center:S[0].lngLat,zoom:12,pitch:65,antialias:true,attributionControl:false});
+const map=new mapboxgl.Map({container:'map',style:'mapbox://styles/mapbox/satellite-streets-v12',center:S[0].lngLat,zoom:12,pitch:65,projection:'mercator',antialias:true,attributionControl:false});
 map.on('error',e=>warn('map: '+((e.error&&e.error.message)||'unknown error')));
 map.addControl(new mapboxgl.AttributionControl({compact:true}));
-let playing=false,t=0,last=performance.now(),sm=null,gnd=null,tg=null,ready=false;
+let playing=false,t=0,last=performance.now(),sm=null,gnd=null,tg=null,tz=0,useGL=false,ready=false;
 map.on('load',()=>{
   sp(45);
   map.addSource('mapbox-dem',{type:'raster-dem',url:'mapbox://mapbox.mapbox-terrain-dem-v1',tileSize:512,maxzoom:14});
@@ -40,26 +68,24 @@ map.on('load',()=>{
   map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:S.map(s=>({...pt(s.lngLat),properties:{name:s.name}}))}});
   map.addLayer({id:'st-dot',type:'circle',source:'stations',paint:{'circle-radius':5,'circle-color':'#ce1126','circle-stroke-color':'#fff','circle-stroke-width':1.5}});
   map.addLayer({id:'st-lbl',type:'symbol',source:'stations',layout:{'text-field':['get','name'],'text-font':['DIN Pro Bold','Arial Unicode MS Bold'],'text-size':12,'text-offset':[0,1.3],'text-anchor':'top','text-allow-overlap':true},paint:{'text-color':'#fff','text-halo-color':'#071018','text-halo-width':1.6}});
-  // Train: native GL circles fed by a GeoJSON point (no DOM marker, no sprite icons)
-  map.addSource('train',{type:'geojson',data:pt(S[0].lngLat)});
-  map.addLayer({id:'train-glow',type:'circle',source:'train',paint:{'circle-radius':28,'circle-color':'#fcd116','circle-opacity':.3,'circle-blur':.8,'circle-pitch-alignment':'map'}});
-  map.addLayer({id:'train-ring',type:'circle',source:'train',paint:{'circle-radius':21,'circle-color':'rgba(0,0,0,0)','circle-stroke-color':'#fcd116','circle-stroke-width':2.5}});
-  // Train pictogram drawn on a canvas at runtime: self-contained, no external sprite
-  try{
-    if(!map.hasImage('train-icon'))map.addImage('train-icon',trainIcon(),{pixelRatio:2});
-    map.addLayer({id:'train-core',type:'symbol',source:'train',layout:{'icon-image':'train-icon','icon-size':1,'icon-allow-overlap':true,'icon-ignore-placement':true}});
-  }catch(e){warn('train icon failed, using dot: '+e.message);
-    map.addLayer({id:'train-core',type:'circle',source:'train',paint:{'circle-radius':5,'circle-color':'#fcd116','circle-stroke-color':'#071018','circle-stroke-width':1.5}});}
+  try{map.addLayer(trainLayer);useGL=trainLayer.ok;}catch(e){warn('train GL layer failed, using fallback: '+e.message);}
+  if(!useGL){ // fallback: GeoJSON point + circles + icon (updates a few frames late)
+    if(map.getLayer('train-gl'))map.removeLayer('train-gl');
+    map.addSource('train',{type:'geojson',data:pt(S[0].lngLat)});
+    map.addLayer({id:'train-glow',type:'circle',source:'train',paint:{'circle-radius':28,'circle-color':'#fcd116','circle-opacity':.3,'circle-blur':.8}});
+    try{map.addImage('train-icon',trainCanvas().getContext('2d').getImageData(0,0,192,192),{pixelRatio:2});
+      map.addLayer({id:'train-core',type:'symbol',source:'train',layout:{'icon-image':'train-icon','icon-allow-overlap':true,'icon-ignore-placement':true}});
+    }catch(e){map.addLayer({id:'train-core',type:'circle',source:'train',paint:{'circle-radius':6,'circle-color':'#fcd116','circle-stroke-color':'#071018','circle-stroke-width':1.5}});}
+  }
   ready=true;sp(90);render();
   let done=false;const go=()=>{if(done)return;done=true;window.hideSplashScreen();playing=true;last=performance.now();};
   map.once('idle',go);setTimeout(go,9000);
 });
 function render(){
   const p=t/C.DURATION_S,d=p*total,pos=at(d);
-  map.getSource('train').setData(pt(pos));
-  // The train is drawn via GeoJSON (async worker), so it lands a few frames behind while moving.
-  // The camera follows the same delayed position so the train stays framed identically when playing and paused.
-  const dc=Math.max(0,d-SYNC_LAG*total/C.DURATION_S),back=dc-chaseBack; // real km behind, not a route fraction
+  if(useGL){const gt=map.queryTerrainElevation(pos);if(gt!=null)tz=gt;const mc=mapboxgl.MercatorCoordinate.fromLngLat(pos,tz+2);trainLayer.pos=[mc.x,mc.y,mc.z];map.triggerRepaint();}
+  else map.getSource('train').setData(pt(pos));
+  const dc=Math.max(0,d-(useGL?0:SYNC_LAG)*total/C.DURATION_S),back=dc-chaseBack; // real km behind, not a route fraction
   const cam=back>=0?at(back):turf.destination(at(0),-back,turf.bearing(at(0),at(0.05))+180,km).geometry.coordinates;
   sm=sm?[sm[0]+(cam[0]-sm[0])*.5,sm[1]+(cam[1]-sm[1])*.5]:cam;
   const g=map.queryTerrainElevation(sm)||0;gnd=gnd==null?g:gnd+(g-gnd)*.3; // height relative to terrain at camera
