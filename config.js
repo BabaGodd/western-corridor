@@ -1,6 +1,6 @@
 window.CONFIG = {
   MAPBOX_TOKEN: 'pk.eyJ1IjoiYmFiYS1ib2xnYSIsImEiOiJjbXViNnYzYjcwMHJuMnpzZ3NqdW12c3prIn0.fPUWfm092CAVCwfpL1wevA', // must start with pk.
-  DURATION_S: 180, CHASE_BEHIND_KM: 0.6, CAM_HEIGHT_M: 220,
+  DURATION_S: 600, CHASE_BEHIND_KM: 0.6, CAM_HEIGHT_M: 220,
   // Official Western Corridor stops, traced from the GRDA map (main line, south to north). [lng, lat]
   STATIONS: [
     { name: 'Takoradi',     lngLat: [-1.7603, 4.8982] },
