@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+    <title>GRDA · Western Railway Corridor</title>
+
+    <meta name="theme-color" content="#050b10">
+    <meta name="description" content="GRDA Western Railway Corridor route simulation.">
+
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        href="https://api.mapbox.com/mapbox-gl-js/v3.30.0/mapbox-gl.css"
+        rel="stylesheet"
+    >
+
+    <link rel="stylesheet" href="splash.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- =========================================================
+         CINEMATIC SPLASH SCREEN
+    ========================================================== -->
+
+    <div id="splash" aria-label="Loading GRDA Western Railway Corridor">
+
+        <div class="splash-atmosphere"></div>
+        <div class="splash-grid"></div>
+
+        <div class="splash-corner splash-corner-tl"></div>
+        <div class="splash-corner splash-corner-tr"></div>
+        <div class="splash-corner splash-corner-bl"></div>
+        <div class="splash-corner splash-corner-br"></div>
+
+        <div class="splash-content">
+
+            <div class="splash-eyebrow">
+                <span></span>
+                GHANA RAILWAY DEVELOPMENT AUTHORITY
+                <span></span>
+            </div>
+
+            <div class="seal">
+                <div class="seal-aura"></div>
+                <div class="seal-ring seal-ring-outer"></div>
+                <div class="seal-ring seal-ring-inner"></div>
+
+                <div class="seal-logo">
+                    <img
+                        src="GRDA-Logo.jpg"
+                        alt="Ghana Railway Development Authority"
+                    >
+                </div>
+
+                <div class="seal-orbit">
+                    <i></i>
+                </div>
+            </div>
+
+            <div class="splash-title">
+                <span class="title-kicker">WESTERN CORRIDOR</span>
+                <h1>Railway Route<br><strong>Simulation</strong></h1>
+            </div>
+
+            <div class="route-line" aria-hidden="true">
+                <span class="route-node start"></span>
+                <svg viewBox="0 0 360 80" preserveAspectRatio="none">
+                    <path
+                        class="route-track route-track-base"
+                        d="M8 65 C55 62 52 28 104 38 S166 70 207 42 S274 10 352 8"
+                    />
+                    <path
+                        class="route-track route-track-active"
+                        d="M8 65 C55 62 52 28 104 38 S166 70 207 42 S274 10 352 8"
+                    />
+                </svg>
+                <span class="route-node end"></span>
+            </div>
+
+            <div class="splash-route-labels">
+                <span>TAKORADI</span>
+                <span>HAMILE</span>
+            </div>
+
+            <div class="loading-area">
+
+                <div class="loading-meta">
+                    <span id="splash-msg">Preparing simulation</span>
+                    <span id="splash-percent">0%</span>
+                </div>
+
+                <div class="bar">
+                    <i id="splash-bar"></i>
+                </div>
+
+            </div>
+
+            <div class="splash-footer">
+                <span>WESTERN RAILWAY CORRIDOR</span>
+                <span class="footer-divider"></span>
+                <span>LIVE VISUALIZATION</span>
+            </div>
+
+        </div>
+
+        <div class="splash-scanline"></div>
+
+    </div>
+
+
+    <!-- =========================================================
+         MAP
+    ========================================================== -->
+
+    <main id="map" aria-label="Western Railway Corridor map"></main>
+
+
+    <!-- =========================================================
+         TOP BRAND BAR
+    ========================================================== -->
+
+    <header class="brand">
+
+        <div class="brand-main">
+
+            <div class="brand-logo">
+                <img src="GRDA-Logo.jpg" alt="GRDA">
+            </div>
+
+            <div class="brand-copy">
+                <span class="brand-kicker">GHANA RAILWAY DEVELOPMENT AUTHORITY</span>
+                <strong>Western Railway Corridor</strong>
+            </div>
+
+        </div>
+
+        <div class="brand-status">
+
+            <span class="status-pulse">
+                <i></i>
+            </span>
+
+            <span class="status-label">LIVE ROUTE</span>
+
+        </div>
+
+    </header>
+
+
+    <!-- =========================================================
+         ROUTE OVERVIEW
+    ========================================================== -->
+
+    <aside class="panel route-panel left">
+
+        <div class="panel-heading">
+            <div class="panel-icon route-icon">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+
+            <div>
+                <span class="panel-kicker">01 · ROUTE</span>
+                <h2>Route overview</h2>
+            </div>
+        </div>
+
+        <div class="panel-body">
+
+            <div class="data-row primary-data">
+                <span>From</span>
+                <strong id="o-from">Takoradi</strong>
+            </div>
+
+            <div class="data-row primary-data">
+                <span>To</span>
+                <strong id="o-to">Hamile</strong>
+            </div>
+
+            <div class="data-divider"></div>
+
+            <div class="metric-grid">
+
+                <div class="metric">
+                    <span>Distance</span>
+                    <strong id="o-dist">–</strong>
+                </div>
+
+                <div class="metric">
+                    <span>Stops</span>
+                    <strong id="o-stops">–</strong>
+                </div>
+
+            </div>
+
+            <div class="status-row">
+                <span>Status</span>
+                <strong id="o-status">
+                    <i></i>
+                    Ready
+                </strong>
+            </div>
+
+        </div>
+
+    </aside>
+
+
+    <!-- =========================================================
+         JOURNEY STATUS
+    ========================================================== -->
+
+    <aside class="panel journey-panel right">
+
+        <div class="panel-heading">
+            <div class="panel-icon journey-icon">
+                <span></span>
+            </div>
+
+            <div>
+                <span class="panel-kicker">02 · JOURNEY</span>
+                <h2>Journey status</h2>
+            </div>
+        </div>
+
+        <div class="panel-body">
+
+            <div class="journey-location">
+                <span>Current position</span>
+                <strong id="j-cur">–</strong>
+            </div>
+
+            <div class="next-station">
+                <div class="next-line"></div>
+
+                <div class="next-info">
+                    <span>Next station</span>
+                    <strong id="j-next">–</strong>
+                </div>
+            </div>
+
+            <div class="metric-grid">
+
+                <div class="metric">
+                    <span>To next</span>
+                    <strong id="j-dist">–</strong>
+                </div>
+
+                <div class="metric">
+                    <span>Remaining</span>
+                    <strong id="j-rem">–</strong>
+                </div>
+
+            </div>
+
+        </div>
+
+    </aside>
+
+
+    <!-- =========================================================
+         BOTTOM CONTROL DECK
+    ========================================================== -->
+
+    <footer class="bottom">
+
+        <div class="control-cluster">
+
+            <button
+                id="play"
+                class="control-button primary-control"
+                aria-label="Play or pause"
+                type="button"
+            >
+                ❚❚
+            </button>
+
+            <button
+                id="restart"
+                class="control-button"
+                aria-label="Restart journey"
+                type="button"
+            >
+                ↺
+            </button>
+
+        </div>
+
+        <div class="journey-progress">
+
+            <div class="progress-time">
+                <span id="t-el">0:00</span>
+                <span class="progress-live">JOURNEY PROGRESS</span>
+                <span id="t-tot">0:00</span>
+            </div>
+
+            <div class="track-wrapper">
+
+                <small id="lbl-a">Takoradi</small>
+
+                <div class="track">
+
+                    <div class="track-background"></div>
+                    <i id="prog"></i>
+
+                    <span class="track-node node-start"></span>
+                    <span class="track-node node-end"></span>
+
+                </div>
+
+                <small id="lbl-b">Hamile</small>
+
+            </div>
+
+        </div>
+
+        <div class="percentage" id="pct">0%</div>
+
+    </footer>
+
+
+    <!-- =========================================================
+         ARRIVAL PANEL
+    ========================================================== -->
+
+    <div id="arrive" class="arrival-card panel" hidden>
+
+        <div class="arrival-mark">
+            <span>✓</span>
+        </div>
+
+        <span class="panel-kicker">JOURNEY COMPLETE</span>
+
+        <h2>Western Corridor</h2>
+
+        <p>
+            Arrival confirmed at
+            <strong>Hamile</strong>
+        </p>
+
+        <button id="again" type="button">
+            <span>↻</span>
+            Run journey again
+        </button>
+
+    </div>
+
+
+    <!-- =========================================================
+         SCRIPTS
+    ========================================================== -->
+
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.30.0/mapbox-gl.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+
+    <script src="config.js"></script>
+    <script src="splash.js"></script>
+    <script src="app.js"></script>
+
+    <script>
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("sw.js");
+            });
+        }
+    </script>
+
+</body>
+</html>

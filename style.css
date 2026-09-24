@@ -1,0 +1,1312 @@
+/* ============================================================
+   GRDA WESTERN RAILWAY CORRIDOR
+   PREMIUM VISUAL SYSTEM
+============================================================ */
+
+:root {
+    --grda-gold: #fcd116;
+    --grda-green: #006b3f;
+    --grda-red: #ce1126;
+
+    --night-950: #03080c;
+    --night-900: #050c12;
+    --night-800: #071018;
+
+    --glass: rgba(5, 13, 19, 0.76);
+    --glass-light: rgba(14, 27, 35, 0.72);
+
+    --line: rgba(255, 255, 255, 0.11);
+    --line-gold: rgba(252, 209, 22, 0.25);
+
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.52);
+    --soft: rgba(255, 255, 255, 0.72);
+
+    --shadow:
+        0 18px 55px rgba(0, 0, 0, 0.32),
+        0 3px 14px rgba(0, 0, 0, 0.22);
+}
+
+
+/* ============================================================
+   RESET
+============================================================ */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+
+    margin: 0;
+
+    overflow: hidden;
+
+    background: var(--night-950);
+    color: var(--text);
+
+    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+button {
+    font: inherit;
+}
+
+button,
+a {
+    -webkit-tap-highlight-color: transparent;
+}
+
+
+/* ============================================================
+   MAP
+============================================================ */
+
+#map {
+    position: fixed;
+    inset: 0;
+
+    background: #081218;
+}
+
+.mapboxgl-ctrl-attrib {
+    background: rgba(3, 8, 12, 0.62) !important;
+    color: rgba(255, 255, 255, 0.55) !important;
+
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+
+    border-top-left-radius: 8px;
+}
+
+.mapboxgl-ctrl-attrib a {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+
+/* ============================================================
+   SHARED GLASS SYSTEM
+============================================================ */
+
+.panel,
+.brand,
+.bottom {
+    position: fixed;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(20, 34, 42, 0.78),
+            rgba(4, 12, 18, 0.82)
+        );
+
+    border: 1px solid rgba(255, 255, 255, 0.095);
+
+    box-shadow: var(--shadow);
+
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+
+    isolation: isolate;
+}
+
+.panel::before,
+.brand::before,
+.bottom::before {
+    content: "";
+
+    position: absolute;
+    inset: 0;
+
+    z-index: -1;
+
+    border-radius: inherit;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(252, 209, 22, 0.045),
+            transparent 40%
+        );
+
+    pointer-events: none;
+}
+
+
+/* ============================================================
+   BRAND HEADER
+============================================================ */
+
+.brand {
+    top: calc(14px + env(safe-area-inset-top));
+    left: 18px;
+    right: 18px;
+
+    min-height: 58px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 8px 13px 8px 9px;
+
+    border-radius: 15px;
+
+    border-color: rgba(252, 209, 22, 0.17);
+
+    animation: interfaceIn 0.8s 0.2s both;
+}
+
+.brand-main {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+}
+
+.brand-logo {
+    width: 39px;
+    height: 39px;
+
+    padding: 2px;
+
+    flex: 0 0 auto;
+
+    border-radius: 50%;
+
+    border: 1px solid rgba(252, 209, 22, 0.6);
+
+    background: rgba(3, 8, 12, 0.8);
+
+    box-shadow:
+        0 0 0 3px rgba(252, 209, 22, 0.035),
+        0 5px 18px rgba(0, 0, 0, 0.25);
+
+    overflow: hidden;
+}
+
+.brand-logo img {
+    width: 100%;
+    height: 100%;
+
+    display: block;
+
+    object-fit: cover;
+
+    border-radius: 50%;
+}
+
+.brand-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+
+    min-width: 0;
+}
+
+.brand-kicker {
+    color: rgba(255, 255, 255, 0.42);
+
+    font-family: "DM Mono", monospace;
+    font-size: 6px;
+    font-weight: 500;
+
+    letter-spacing: 0.18em;
+
+    white-space: nowrap;
+}
+
+.brand-copy strong {
+    color: #ffffff;
+
+    font-size: 12px;
+    font-weight: 700;
+
+    letter-spacing: -0.015em;
+
+    white-space: nowrap;
+}
+
+.brand-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    padding: 7px 10px;
+
+    border-radius: 999px;
+
+    border: 1px solid rgba(252, 209, 22, 0.17);
+
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.status-pulse {
+    position: relative;
+
+    width: 7px;
+    height: 7px;
+
+    display: block;
+}
+
+.status-pulse i {
+    position: absolute;
+    inset: 0;
+
+    display: block;
+
+    border-radius: 50%;
+
+    background: #ce1126;
+
+    box-shadow: 0 0 8px rgba(206, 17, 38, 0.65);
+
+    animation: statusPulse 1.8s ease-in-out infinite;
+}
+
+.status-label {
+    color: var(--grda-gold);
+
+    font-family: "DM Mono", monospace;
+    font-size: 7px;
+    letter-spacing: 0.13em;
+}
+
+
+/* ============================================================
+   INFORMATION PANELS
+============================================================ */
+
+.panel {
+    width: 214px;
+
+    padding: 14px;
+
+    border-radius: 15px;
+
+    top: calc(88px + env(safe-area-inset-top));
+
+    animation: interfaceIn 0.8s 0.35s both;
+}
+
+.left {
+    left: 18px;
+}
+
+.right {
+    right: 18px;
+
+    animation-delay: 0.45s;
+}
+
+.panel-heading {
+    display: flex;
+    align-items: center;
+
+    gap: 9px;
+
+    margin-bottom: 14px;
+
+    padding-bottom: 11px;
+
+    border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.panel-icon {
+    position: relative;
+
+    width: 27px;
+    height: 27px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    flex: 0 0 auto;
+
+    border-radius: 8px;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(252, 209, 22, 0.12),
+            rgba(252, 209, 22, 0.025)
+        );
+
+    border: 1px solid rgba(252, 209, 22, 0.16);
+}
+
+.route-icon {
+    gap: 2px;
+}
+
+.route-icon span {
+    width: 2px;
+    height: 9px;
+
+    border-radius: 2px;
+
+    background: var(--grda-gold);
+}
+
+.route-icon span:nth-child(1) {
+    transform: translateY(2px);
+}
+
+.route-icon span:nth-child(2) {
+    height: 14px;
+}
+
+.route-icon span:nth-child(3) {
+    transform: translateY(-2px);
+}
+
+.journey-icon span {
+    width: 8px;
+    height: 8px;
+
+    border-radius: 50%;
+
+    background: var(--grda-gold);
+
+    box-shadow:
+        0 0 0 4px rgba(252, 209, 22, 0.08),
+        0 0 10px rgba(252, 209, 22, 0.35);
+}
+
+.panel-kicker {
+    display: block;
+
+    margin-bottom: 3px;
+
+    color: rgba(255, 255, 255, 0.38);
+
+    font-family: "DM Mono", monospace;
+    font-size: 6px;
+    font-weight: 500;
+
+    letter-spacing: 0.18em;
+
+    text-transform: uppercase;
+}
+
+.panel h2 {
+    margin: 0;
+
+    color: #ffffff;
+
+    font-size: 11px;
+    font-weight: 700;
+
+    letter-spacing: -0.01em;
+
+    text-transform: none;
+}
+
+.panel-body {
+    display: flex;
+    flex-direction: column;
+}
+
+
+/* ============================================================
+   DATA ROWS
+============================================================ */
+
+.data-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 12px;
+
+    padding: 4px 0;
+}
+
+.data-row span,
+.metric span,
+.status-row > span,
+.journey-location > span,
+.next-info > span {
+    color: rgba(255, 255, 255, 0.43);
+
+    font-family: "DM Mono", monospace;
+    font-size: 7px;
+
+    letter-spacing: 0.08em;
+
+    text-transform: uppercase;
+}
+
+.data-row strong {
+    color: #ffffff;
+
+    font-size: 10px;
+    font-weight: 700;
+
+    text-align: right;
+
+    white-space: nowrap;
+}
+
+.primary-data strong {
+    color: var(--grda-gold);
+}
+
+.data-divider {
+    height: 1px;
+
+    margin: 9px 0;
+
+    background: rgba(255, 255, 255, 0.07);
+}
+
+
+/* ============================================================
+   METRICS
+============================================================ */
+
+.metric-grid {
+    display: grid;
+
+    grid-template-columns: 1fr 1fr;
+
+    gap: 7px;
+}
+
+.metric {
+    min-width: 0;
+
+    padding: 8px;
+
+    border-radius: 9px;
+
+    background: rgba(255, 255, 255, 0.028);
+
+    border: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.metric span {
+    display: block;
+
+    margin-bottom: 5px;
+}
+
+.metric strong {
+    display: block;
+
+    color: #ffffff;
+
+    font-family: "DM Mono", monospace;
+    font-size: 10px;
+    font-weight: 500;
+
+    white-space: nowrap;
+}
+
+
+/* ============================================================
+   STATUS
+============================================================ */
+
+.status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-top: 8px;
+
+    padding-top: 8px;
+
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.status-row strong {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+
+    color: #ffffff;
+
+    font-family: "DM Mono", monospace;
+    font-size: 7px;
+    font-weight: 500;
+
+    text-transform: uppercase;
+}
+
+.status-row strong i {
+    width: 5px;
+    height: 5px;
+
+    border-radius: 50%;
+
+    background: var(--grda-green);
+
+    box-shadow: 0 0 7px rgba(0, 107, 63, 0.7);
+}
+
+
+/* ============================================================
+   JOURNEY PANEL
+============================================================ */
+
+.journey-location {
+    padding-bottom: 10px;
+}
+
+.journey-location > span,
+.next-info > span {
+    display: block;
+
+    margin-bottom: 4px;
+}
+
+.journey-location strong {
+    display: block;
+
+    color: var(--grda-gold);
+
+    font-size: 15px;
+    font-weight: 700;
+
+    letter-spacing: -0.02em;
+}
+
+.next-station {
+    display: flex;
+    gap: 9px;
+
+    margin: 1px 0 11px;
+}
+
+.next-line {
+    position: relative;
+
+    width: 1px;
+
+    flex: 0 0 1px;
+
+    background:
+        linear-gradient(
+            to bottom,
+            var(--grda-gold),
+            rgba(252, 209, 22, 0.05)
+        );
+}
+
+.next-line::before {
+    content: "";
+
+    position: absolute;
+
+    top: 0;
+    left: 50%;
+
+    width: 6px;
+    height: 6px;
+
+    border-radius: 50%;
+
+    background: var(--grda-gold);
+
+    transform: translate(-50%, 0);
+
+    box-shadow: 0 0 8px rgba(252, 209, 22, 0.4);
+}
+
+.next-info strong {
+    color: #ffffff;
+
+    font-size: 10px;
+    font-weight: 600;
+}
+
+
+/* ============================================================
+   BOTTOM CONTROL DECK
+============================================================ */
+
+.bottom {
+    left: 18px;
+    right: 18px;
+
+    bottom: calc(17px + env(safe-area-inset-bottom));
+
+    min-height: 76px;
+
+    display: flex;
+    align-items: center;
+
+    gap: 16px;
+
+    padding: 12px 15px;
+
+    border-radius: 16px;
+
+    border-color: rgba(252, 209, 22, 0.17);
+
+    animation: interfaceUp 0.8s 0.5s both;
+}
+
+.control-cluster {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.control-button {
+    width: 34px;
+    height: 34px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0;
+
+    border-radius: 50%;
+
+    color: rgba(255, 255, 255, 0.72);
+
+    background: rgba(255, 255, 255, 0.045);
+
+    border: 1px solid rgba(255, 255, 255, 0.11);
+
+    cursor: pointer;
+
+    transition:
+        transform 0.2s ease,
+        color 0.2s ease,
+        border-color 0.2s ease,
+        background 0.2s ease;
+}
+
+.control-button:hover {
+    color: #ffffff;
+
+    background: rgba(255, 255, 255, 0.08);
+
+    border-color: rgba(252, 209, 22, 0.35);
+
+    transform: translateY(-1px);
+}
+
+.control-button:active {
+    transform: scale(0.94);
+}
+
+.primary-control {
+    color: var(--grda-gold);
+
+    border-color: rgba(252, 209, 22, 0.4);
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(252, 209, 22, 0.13),
+            rgba(252, 209, 22, 0.035)
+        );
+
+    box-shadow: 0 0 20px rgba(252, 209, 22, 0.05);
+}
+
+button:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 3px;
+}
+
+
+/* ============================================================
+   JOURNEY PROGRESS
+============================================================ */
+
+.journey-progress {
+    min-width: 0;
+
+    flex: 1;
+}
+
+.progress-time {
+    display: grid;
+
+    grid-template-columns: 40px 1fr 40px;
+
+    align-items: center;
+
+    margin-bottom: 7px;
+
+    color: rgba(255, 255, 255, 0.48);
+
+    font-family: "DM Mono", monospace;
+    font-size: 7px;
+}
+
+.progress-time span:last-child {
+    text-align: right;
+}
+
+.progress-live {
+    color: rgba(252, 209, 22, 0.65);
+
+    font-size: 6px;
+
+    letter-spacing: 0.16em;
+
+    text-align: center;
+}
+
+.track-wrapper {
+    position: relative;
+
+    padding: 0 4px;
+}
+
+.track {
+    position: relative;
+
+    height: 4px;
+
+    border-radius: 20px;
+
+    overflow: visible;
+}
+
+.track-background {
+    position: absolute;
+    inset: 0;
+
+    border-radius: inherit;
+
+    background: rgba(255, 255, 255, 0.09);
+}
+
+#prog {
+    position: absolute;
+
+    top: 0;
+    left: 0;
+
+    width: 0;
+    height: 100%;
+
+    display: block;
+
+    border-radius: inherit;
+
+    background:
+        linear-gradient(
+            90deg,
+            var(--grda-green),
+            var(--grda-gold) 72%,
+            var(--grda-red)
+        );
+
+    box-shadow: 0 0 9px rgba(252, 209, 22, 0.22);
+
+    transition: width 0.18s linear;
+}
+
+.track-node {
+    position: absolute;
+
+    top: 50%;
+
+    width: 6px;
+    height: 6px;
+
+    border-radius: 50%;
+
+    transform: translateY(-50%);
+
+    background: var(--night-900);
+
+    border: 1px solid rgba(255, 255, 255, 0.55);
+
+    z-index: 2;
+}
+
+.node-start {
+    left: 0;
+}
+
+.node-end {
+    right: 0;
+
+    border-color: var(--grda-red);
+}
+
+.track-wrapper small {
+    position: absolute;
+
+    top: 10px;
+
+    color: rgba(255, 255, 255, 0.35);
+
+    font-family: "DM Mono", monospace;
+    font-size: 6px;
+
+    letter-spacing: 0.08em;
+
+    text-transform: uppercase;
+}
+
+#lbl-a {
+    left: 3px;
+}
+
+#lbl-b {
+    right: 3px;
+}
+
+
+/* ============================================================
+   PERCENTAGE
+============================================================ */
+
+.percentage {
+    min-width: 48px;
+
+    color: var(--grda-gold);
+
+    font-family: "DM Mono", monospace;
+    font-size: 11px;
+    font-weight: 500;
+
+    text-align: right;
+}
+
+
+/* ============================================================
+   ARRIVAL CARD
+============================================================ */
+
+#arrive {
+    top: 50%;
+    left: 50%;
+
+    width: 280px;
+
+    transform: translate(-50%, -50%);
+
+    text-align: center;
+
+    padding: 24px;
+
+    border-radius: 18px;
+
+    border-color: rgba(252, 209, 22, 0.3);
+
+    box-shadow:
+        0 30px 100px rgba(0, 0, 0, 0.55),
+        0 0 50px rgba(252, 209, 22, 0.07);
+
+    animation: arrivalIn 0.65s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+#arrive[hidden] {
+    display: none;
+}
+
+.arrival-mark {
+    width: 52px;
+    height: 52px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin: 0 auto 15px;
+
+    border-radius: 50%;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(0, 107, 63, 0.25),
+            rgba(0, 107, 63, 0.06)
+        );
+
+    border: 1px solid rgba(0, 107, 63, 0.7);
+
+    box-shadow: 0 0 25px rgba(0, 107, 63, 0.15);
+}
+
+.arrival-mark span {
+    color: #66d19e;
+
+    font-size: 21px;
+}
+
+#arrive .panel-kicker {
+    margin-bottom: 6px;
+
+    color: var(--grda-gold);
+}
+
+#arrive h2 {
+    margin: 0 0 8px;
+
+    color: #ffffff;
+
+    font-size: 17px;
+    font-weight: 700;
+
+    letter-spacing: -0.025em;
+}
+
+#arrive p {
+    margin: 0 0 18px;
+
+    color: rgba(255, 255, 255, 0.55);
+
+    font-size: 9px;
+}
+
+#arrive p strong {
+    color: #ffffff;
+}
+
+#again {
+    width: 100%;
+
+    min-height: 36px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+
+    padding: 0 15px;
+
+    border: 1px solid rgba(252, 209, 22, 0.4);
+    border-radius: 999px;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(252, 209, 22, 0.14),
+            rgba(252, 209, 22, 0.035)
+        );
+
+    color: var(--grda-gold);
+
+    font-size: 8px;
+    font-weight: 700;
+
+    letter-spacing: 0.08em;
+
+    text-transform: uppercase;
+
+    cursor: pointer;
+
+    transition:
+        background 0.2s ease,
+        transform 0.2s ease;
+}
+
+#again:hover {
+    background: rgba(252, 209, 22, 0.18);
+    transform: translateY(-1px);
+}
+
+#again span {
+    font-size: 13px;
+}
+
+
+/* ============================================================
+   ANIMATIONS
+============================================================ */
+
+@keyframes interfaceIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes interfaceUp {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes statusPulse {
+    50% {
+        opacity: 0.35;
+        transform: scale(0.72);
+    }
+}
+
+@keyframes arrivalIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -45%) scale(0.94);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+
+/* ============================================================
+   TABLET
+============================================================ */
+
+@media (max-width: 900px) {
+
+    .panel {
+        width: 190px;
+    }
+
+    .brand {
+        left: 12px;
+        right: 12px;
+    }
+
+    .panel.left {
+        left: 12px;
+    }
+
+    .panel.right {
+        right: 12px;
+    }
+
+    .bottom {
+        left: 12px;
+        right: 12px;
+    }
+}
+
+
+/* ============================================================
+   MOBILE
+============================================================ */
+
+@media (max-width: 600px) {
+
+    .brand {
+        top: calc(9px + env(safe-area-inset-top));
+
+        left: 8px;
+        right: 8px;
+
+        min-height: 49px;
+
+        padding: 6px 8px;
+
+        border-radius: 13px;
+    }
+
+    .brand-logo {
+        width: 33px;
+        height: 33px;
+    }
+
+    .brand-kicker {
+        display: none;
+    }
+
+    .brand-copy strong {
+        font-size: 10px;
+    }
+
+    .brand-status {
+        padding: 6px 8px;
+    }
+
+    .status-label {
+        font-size: 6px;
+    }
+
+
+    .panel {
+        width: 148px;
+
+        top: calc(68px + env(safe-area-inset-top));
+
+        padding: 10px;
+
+        border-radius: 12px;
+    }
+
+    .left {
+        left: 8px;
+    }
+
+    .right {
+        right: 8px;
+    }
+
+    .panel-heading {
+        gap: 7px;
+
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+    }
+
+    .panel-icon {
+        width: 23px;
+        height: 23px;
+    }
+
+    .panel-kicker {
+        font-size: 5px;
+    }
+
+    .panel h2 {
+        font-size: 9px;
+    }
+
+    .data-row strong {
+        font-size: 8px;
+    }
+
+    .data-row span,
+    .metric span,
+    .status-row > span,
+    .journey-location > span,
+    .next-info > span {
+        font-size: 6px;
+    }
+
+    .metric {
+        padding: 6px;
+    }
+
+    .metric strong {
+        font-size: 8px;
+    }
+
+    .journey-location strong {
+        font-size: 11px;
+    }
+
+    .next-info strong {
+        font-size: 8px;
+    }
+
+
+    .bottom {
+        left: 8px;
+        right: 8px;
+
+        bottom: calc(8px + env(safe-area-inset-bottom));
+
+        min-height: 67px;
+
+        gap: 9px;
+
+        padding: 9px 9px;
+
+        border-radius: 13px;
+    }
+
+    .control-cluster {
+        gap: 5px;
+    }
+
+    .control-button {
+        width: 29px;
+        height: 29px;
+
+        font-size: 10px;
+    }
+
+    .percentage {
+        min-width: 34px;
+
+        font-size: 9px;
+    }
+
+    .progress-time {
+        grid-template-columns: 34px 1fr 34px;
+
+        font-size: 6px;
+    }
+
+    .progress-live {
+        font-size: 5px;
+    }
+
+    .track-wrapper small {
+        display: none;
+    }
+
+    #arrive {
+        width: min(280px, calc(100vw - 32px));
+    }
+}
+
+
+/* ============================================================
+   VERY SMALL PHONES
+============================================================ */
+
+@media (max-width: 380px) {
+
+    .panel {
+        width: 132px;
+    }
+
+    .panel-heading {
+        margin-bottom: 7px;
+    }
+
+    .metric-grid {
+        gap: 4px;
+    }
+
+    .metric {
+        padding: 5px;
+    }
+
+    .brand-copy strong {
+        font-size: 9px;
+    }
+
+    .brand-status {
+        display: none;
+    }
+
+    .progress-live {
+        display: none;
+    }
+}
+
+
+/* ============================================================
+   REDUCED MOTION
+============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
