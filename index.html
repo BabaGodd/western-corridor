@@ -166,66 +166,6 @@
 
 
     <!-- =========================================================
-         ROUTE OVERVIEW
-    ========================================================== -->
-
-    <aside class="panel route-panel left">
-
-        <div class="panel-heading">
-            <div class="panel-icon route-icon">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-
-            <div>
-                <span class="panel-kicker">01 · ROUTE</span>
-                <h2>Route overview</h2>
-            </div>
-        </div>
-
-        <div class="panel-body">
-
-            <div class="data-row primary-data">
-                <span>From</span>
-                <strong id="o-from">Takoradi</strong>
-            </div>
-
-            <div class="data-row primary-data">
-                <span>To</span>
-                <strong id="o-to">Hamile</strong>
-            </div>
-
-            <div class="data-divider"></div>
-
-            <div class="metric-grid">
-
-                <div class="metric">
-                    <span>Distance</span>
-                    <strong id="o-dist">–</strong>
-                </div>
-
-                <div class="metric">
-                    <span>Stops</span>
-                    <strong id="o-stops">–</strong>
-                </div>
-
-            </div>
-
-            <div class="status-row">
-                <span>Status</span>
-                <strong id="o-status">
-                    <i></i>
-                    Ready
-                </strong>
-            </div>
-
-        </div>
-
-    </aside>
-
-
-    <!-- =========================================================
          JOURNEY STATUS
     ========================================================== -->
 
@@ -288,10 +228,10 @@
             <button
                 id="play"
                 class="control-button primary-control"
-                aria-label="Play or pause"
+                aria-label="Play journey"
                 type="button"
             >
-                ❚❚
+                ▶
             </button>
 
             <button
@@ -317,7 +257,16 @@
 
                 <small id="lbl-a">Takoradi</small>
 
-                <div class="track">
+                <div
+                    class="track"
+                    id="prog-track"
+                    role="slider"
+                    tabindex="0"
+                    aria-label="Journey progress"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                >
 
                     <div class="track-background"></div>
                     <i id="prog"></i>

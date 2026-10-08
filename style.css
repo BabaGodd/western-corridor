@@ -145,33 +145,35 @@ a {
 
 .brand {
     top: calc(14px + env(safe-area-inset-top));
-    left: 18px;
-    right: 18px;
+    left: 50%;
+    right: auto;
 
-    min-height: 58px;
+    width: min(460px, calc(100% - 24px));
+    min-height: 48px;
 
     display: flex;
     align-items: center;
     justify-content: space-between;
 
-    padding: 8px 13px 8px 9px;
+    padding: 6px 10px 6px 7px;
 
-    border-radius: 15px;
+    border-radius: 12px;
 
     border-color: rgba(252, 209, 22, 0.17);
 
-    animation: interfaceIn 0.8s 0.2s both;
+    transform: translateX(-50%);
+    animation: interfaceInCentered 0.8s 0.2s both;
 }
 
 .brand-main {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 8px;
 }
 
 .brand-logo {
-    width: 39px;
-    height: 39px;
+    width: 32px;
+    height: 32px;
 
     padding: 2px;
 
@@ -224,7 +226,7 @@ a {
 .brand-copy strong {
     color: #ffffff;
 
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
 
     letter-spacing: -0.015em;
@@ -235,9 +237,9 @@ a {
 .brand-status {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 5px;
 
-    padding: 7px 10px;
+    padding: 5px 8px;
 
     border-radius: 999px;
 
@@ -284,9 +286,9 @@ a {
 ============================================================ */
 
 .panel {
-    width: 214px;
+    width: 176px;
 
-    padding: 14px;
+    padding: 12px;
 
     border-radius: 15px;
 
@@ -309,11 +311,11 @@ a {
     display: flex;
     align-items: center;
 
-    gap: 9px;
+    gap: 8px;
 
-    margin-bottom: 14px;
+    margin-bottom: 10px;
 
-    padding-bottom: 11px;
+    padding-bottom: 8px;
 
     border-bottom: 1px solid rgba(255, 255, 255, 0.075);
 }
@@ -321,8 +323,8 @@ a {
 .panel-icon {
     position: relative;
 
-    width: 27px;
-    height: 27px;
+    width: 24px;
+    height: 24px;
 
     display: flex;
     align-items: center;
@@ -462,7 +464,7 @@ a {
 .data-divider {
     height: 1px;
 
-    margin: 9px 0;
+    margin: 7px 0;
 
     background: rgba(255, 255, 255, 0.07);
 }
@@ -477,13 +479,13 @@ a {
 
     grid-template-columns: 1fr 1fr;
 
-    gap: 7px;
+    gap: 6px;
 }
 
 .metric {
     min-width: 0;
 
-    padding: 8px;
+    padding: 7px;
 
     border-radius: 9px;
 
@@ -558,7 +560,7 @@ a {
 ============================================================ */
 
 .journey-location {
-    padding-bottom: 10px;
+    padding-bottom: 7px;
 }
 
 .journey-location > span,
@@ -581,9 +583,9 @@ a {
 
 .next-station {
     display: flex;
-    gap: 9px;
+    gap: 8px;
 
-    margin: 1px 0 11px;
+    margin: 1px 0 8px;
 }
 
 .next-line {
@@ -635,18 +637,19 @@ a {
 
 .bottom {
     left: 18px;
-    right: 18px;
+    right: auto;
 
     bottom: calc(17px + env(safe-area-inset-bottom));
 
-    min-height: 76px;
+    width: min(320px, calc(50% - 26px));
+    min-height: 64px;
 
     display: flex;
     align-items: center;
 
-    gap: 16px;
+    gap: 12px;
 
-    padding: 12px 15px;
+    padding: 9px 12px;
 
     border-radius: 16px;
 
@@ -662,8 +665,8 @@ a {
 }
 
 .control-button {
-    width: 34px;
-    height: 34px;
+    width: 31px;
+    height: 31px;
 
     display: flex;
     align-items: center;
@@ -731,6 +734,7 @@ button:focus-visible {
     min-width: 0;
 
     flex: 1;
+    max-width: none;
 }
 
 .progress-time {
@@ -740,7 +744,7 @@ button:focus-visible {
 
     align-items: center;
 
-    margin-bottom: 7px;
+    margin-bottom: 5px;
 
     color: rgba(255, 255, 255, 0.48);
 
@@ -776,6 +780,14 @@ button:focus-visible {
     border-radius: 20px;
 
     overflow: visible;
+
+    cursor: pointer;
+    touch-action: none;
+}
+
+.track:focus-visible {
+    outline: 2px solid var(--grda-gold);
+    outline-offset: 5px;
 }
 
 .track-background {
@@ -1037,6 +1049,18 @@ button:focus-visible {
     }
 }
 
+@keyframes interfaceInCentered {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
 @keyframes interfaceUp {
     from {
         opacity: 0;
@@ -1075,26 +1099,13 @@ button:focus-visible {
 
 @media (max-width: 900px) {
 
-    .panel {
-        width: 190px;
-    }
-
     .brand {
-        left: 12px;
-        right: 12px;
-    }
-
-    .panel.left {
-        left: 12px;
-    }
-
-    .panel.right {
-        right: 12px;
+        top: calc(10px + env(safe-area-inset-top));
     }
 
     .bottom {
         left: 12px;
-        right: 12px;
+        width: min(300px, calc(50% - 20px));
     }
 }
 
@@ -1108,19 +1119,18 @@ button:focus-visible {
     .brand {
         top: calc(9px + env(safe-area-inset-top));
 
-        left: 8px;
-        right: 8px;
+        width: calc(100% - 16px);
 
-        min-height: 49px;
+        min-height: 44px;
 
-        padding: 6px 8px;
+        padding: 5px 7px;
 
-        border-radius: 13px;
+        border-radius: 11px;
     }
 
     .brand-logo {
-        width: 33px;
-        height: 33px;
+        width: 29px;
+        height: 29px;
     }
 
     .brand-kicker {
@@ -1128,11 +1138,11 @@ button:focus-visible {
     }
 
     .brand-copy strong {
-        font-size: 10px;
+        font-size: 9px;
     }
 
     .brand-status {
-        padding: 6px 8px;
+        padding: 4px 6px;
     }
 
     .status-label {
@@ -1140,86 +1150,20 @@ button:focus-visible {
     }
 
 
-    .panel {
-        width: 148px;
-
-        top: calc(68px + env(safe-area-inset-top));
-
-        padding: 10px;
-
-        border-radius: 12px;
-    }
-
-    .left {
-        left: 8px;
-    }
-
-    .right {
-        right: 8px;
-    }
-
-    .panel-heading {
-        gap: 7px;
-
-        margin-bottom: 10px;
-        padding-bottom: 8px;
-    }
-
-    .panel-icon {
-        width: 23px;
-        height: 23px;
-    }
-
-    .panel-kicker {
-        font-size: 5px;
-    }
-
-    .panel h2 {
-        font-size: 9px;
-    }
-
-    .data-row strong {
-        font-size: 8px;
-    }
-
-    .data-row span,
-    .metric span,
-    .status-row > span,
-    .journey-location > span,
-    .next-info > span {
-        font-size: 6px;
-    }
-
-    .metric {
-        padding: 6px;
-    }
-
-    .metric strong {
-        font-size: 8px;
-    }
-
-    .journey-location strong {
-        font-size: 11px;
-    }
-
-    .next-info strong {
-        font-size: 8px;
-    }
-
-
     .bottom {
         left: 8px;
-        right: 8px;
+        width: calc(50% - 14px);
 
         bottom: calc(8px + env(safe-area-inset-bottom));
 
-        min-height: 67px;
+        min-height: 0;
 
-        gap: 9px;
+        flex-wrap: wrap;
+        gap: 7px 8px;
 
-        padding: 9px 9px;
+        padding: 8px;
 
-        border-radius: 13px;
+        border-radius: 11px;
     }
 
     .control-cluster {
@@ -1227,13 +1171,19 @@ button:focus-visible {
     }
 
     .control-button {
-        width: 29px;
-        height: 29px;
+        width: 27px;
+        height: 27px;
 
         font-size: 10px;
     }
 
+    .journey-progress {
+        order: 3;
+        flex: 1 0 100%;
+    }
+
     .percentage {
+        margin-left: auto;
         min-width: 34px;
 
         font-size: 9px;
@@ -1264,22 +1214,6 @@ button:focus-visible {
 ============================================================ */
 
 @media (max-width: 380px) {
-
-    .panel {
-        width: 132px;
-    }
-
-    .panel-heading {
-        margin-bottom: 7px;
-    }
-
-    .metric-grid {
-        gap: 4px;
-    }
-
-    .metric {
-        padding: 5px;
-    }
 
     .brand-copy strong {
         font-size: 9px;
