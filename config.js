@@ -1,15 +1,11 @@
 window.CONFIG = {
   MAPBOX_TOKEN: 'pk.eyJ1IjoiYmFiYS1ib2xnYSIsImEiOiJjbXViNnYzYjcwMHJuMnpzZ3NqdW12c3prIn0.fPUWfm092CAVCwfpL1wevA', // must start with pk.
-  SPEED_KM_S: 0.1446, // Journey duration is derived from the smoothed Western route in app.js.
-  ROUTE_SHARPNESS: 0.82,
-  ROUTE_RESOLUTION: 12000,
-  CHASE_BEHIND_KM: 0.18,
-  CAM_HEIGHT_M: 120,
-  CAMERA_PITCH: 68, // Initial pitch; the active chase camera aims at the train.
-  TRAIN_MODEL_URL: './Ghana_Freight_Train.glb',
-  TRAIN_SCALE: [1, 1, 1],
-  TRAIN_LATERAL_OFFSET_M: 1.7,
-  TRAIN_BEARING_OFFSET_DEG: 0,
+  // Three-hour flythrough across the full corridor.
+  DURATION_S: 10800,
+  // Chase camera: real distances in meters/km, matching Central Corridor's working values.
+  CHASE_BEHIND_KM: 0.18,  // ~180m behind the train
+  CAM_SIDE_M: 0,          // directly behind the train
+  CAM_HEIGHT_M: 50,       // elevated rear chase, matching the previous terrain-relative height
   // Official Western Corridor stops, traced from the GRDA map (main line, south to north). [lng, lat]
   STATIONS: [
     { name: 'Takoradi',     lngLat: [-1.7603, 4.8982] },

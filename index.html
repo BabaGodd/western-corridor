@@ -318,6 +318,49 @@
          SCRIPTS
     ========================================================== -->
 
+    <script>
+        (function () {
+            var released = false;
+
+            function releaseSplash(message) {
+                if (released) return;
+                var splash = document.getElementById("splash");
+                if (!splash) return;
+                released = true;
+
+                if (message) {
+                    var notice = document.createElement("div");
+                    notice.setAttribute("role", "alert");
+                    notice.textContent = message;
+                    notice.style.cssText = "position:fixed;z-index:10000;top:70px;left:8px;right:8px;padding:12px;background:#ce1126;color:#fff;font:13px Inter,sans-serif;text-align:center;border-radius:8px";
+                    document.body.appendChild(notice);
+                }
+
+                splash.classList.add("hide");
+                window.setTimeout(function () {
+                    if (splash.parentNode) splash.remove();
+                }, 950);
+            }
+
+            window.addEventListener("error", function (event) {
+                if (event.target && event.target !== window) {
+                    if (event.target.tagName !== "SCRIPT") return;
+                    releaseSplash("A required script could not load. Check your connection and reload the page.");
+                } else {
+                    releaseSplash("The app encountered an error while starting. Reload the page to try again.");
+                }
+            }, true);
+
+            window.addEventListener("unhandledrejection", function () {
+                releaseSplash("The app could not finish starting. Check your connection and reload the page.");
+            }, true);
+
+            window.setTimeout(function () {
+                releaseSplash("The map did not finish loading. Check your connection and reload the page.");
+            }, 25000);
+        })();
+    </script>
+
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.30.0/mapbox-gl.js"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
