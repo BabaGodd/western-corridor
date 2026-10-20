@@ -45,7 +45,7 @@ map.on('error',e=>{
   if(e.sourceId==='train-position'||(/glb|model|Ghana_Freight_Train/i.test(msg)&&e.sourceId!=='scenery')){
     showProblem('Could not load the train model file. Check that '+TRAIN_URI+' is uploaded in the same folder as index.html.');
   }else if(e.sourceId==='scenery'||/scenery|station\.glb|tree\.glb|pole\.glb/i.test(msg)){
-    showProblem('Could not load the scenery models. Check that models/station.glb, models/tree.glb, and models/pole.glb are uploaded.');
+    showProblem('Could not load the scenery models. Check that every .glb in the models folder is uploaded (station, canopy, tree, pole, flag, flag-grda, sign, signal, fence, watertower, wagon).');
   }
   warn('map: '+(msg||'unknown error')+(e.sourceId?' [source: '+e.sourceId+']':''));
 });
@@ -109,36 +109,80 @@ map.on('load',()=>{
   // a bare dot on the map, without reopening the density/visibility problems the preload and tile cache exist
   // to prevent. Each model's own geometry is already modeled in real-world meters, so model-scale stays [1,1,1].
   try{
-    map.addModel('scenery-station','./models/station.glb');
-    map.addModel('scenery-tree','./models/tree.glb');
-    map.addModel('scenery-pole','./models/pole.glb');
+    const IDS=['station','canopy','tree','pole','flag','flag-grda','sign','signal','fence','watertower','wagon'];
+    IDS.forEach(n=>map.addModel('scenery-'+n,'./models/'+(n==='flag-grda'?'flag-grda':n)+'.glb'));
     const sceneryFeatures=[];
+    const add=(id,c,yaw)=>sceneryFeatures.push({...pt(c),properties:{modelId:'scenery-'+id,rotation:[0,0,yaw]}});
+    // point at 'side' metres right of track (negative = left) and 'along' metres forward along track, from station s
+    const at=(origin,hd,side,along)=>{
+      let c=origin;
+      if(along) c=turf.destination(c,Math.abs(along)/1000,along>0?hd:hd+180,km).geometry.coordinates;
+      if(side)  c=turf.destination(c,Math.abs(side)/1000,side>0?hd+90:hd-90,km).geometry.coordinates;
+      return c;
+    };
+    const WATER=['Takoradi','Sunyani','Wa'];
+    const sidingLines=[];
     S.forEach((s,i)=>{
       const prev=S[Math.max(0,i-1)].lngLat,next=S[Math.min(S.length-1,i+1)].lngLat;
       const hd=turf.bearing(prev,next);
-      // Small station plaza, offset off the track so nothing overlaps the moving train.
-      const buildingPt=turf.destination(s.lngLat,0.028,hd+90,km).geometry.coordinates; // ~28m off-track
-      sceneryFeatures.push({...pt(buildingPt),properties:{modelId:'scenery-station',rotation:[0,0,hd]}});
-      // A pole flanking each side of the approach.
-      [-1,1].forEach(side=>{
-        const polePt=turf.destination(s.lngLat,0.018,hd+90*side,km).geometry.coordinates;
-        sceneryFeatures.push({...pt(polePt),properties:{modelId:'scenery-pole',rotation:[0,0,0]}});
-      });
-      // A small cluster of trees behind the building.
+      const o=s.lngLat;
+      // Station building: long axis parallel to track (yaw = hd-90), canopy/front facing the track.
+      const bp=at(o,hd,28,0);
+      add('station',bp,hd-90);
+      add('canopy',bp,hd-90);
+      add('sign',at(o,hd,14,14),hd);
+      // Two flags at every station: Ghana + GRDA, side by side, facing the approaching (rear-chase) camera.
+      add('flag',at(o,hd,16,-5),hd);
+      add('flag-grda',at(o,hd,16,5),hd);
+      // Signals either side, utility poles, perimeter fence behind the building.
+      add('signal',at(o,hd,-9,-60),hd);
+      add('signal',at(o,hd,9,60),hd+180);
+      [-1,1].forEach(sd=>add('pole',at(o,hd,18*sd,0),0));
+      [-8.4,-4.2,0,4.2,8.4].forEach(a=>add('fence',at(o,hd,44,a),hd-90));
+      // Trees behind the building.
       [[0.04,20],[0.05,55],[0.045,100],[0.052,145]].forEach(([dist,ang])=>{
-        const treePt=turf.destination(buildingPt,dist,hd+ang,km).geometry.coordinates;
-        sceneryFeatures.push({...pt(treePt),properties:{modelId:'scenery-tree',rotation:[0,0,ang*3]}});
+        add('tree',turf.destination(bp,dist,hd+ang,km).geometry.coordinates,ang*3);
       });
+      if(WATER.includes(s.name)) add('watertower',at(o,hd,70,-20),0);
+      if(s.name==='Takoradi'){
+        // Freight siding with parked wagons, on the left of the main line.
+        sidingLines.push({type:'Feature',geometry:{type:'LineString',coordinates:[at(o,hd,-10,-90),at(o,hd,-10,90)]}});
+        [-39,-26,-13,0,13,26,39].forEach(a=>add('wagon',at(o,hd,-10,a),hd-90));
+      }
     });
-    console.log('[scenery] features built:', sceneryFeatures.length, sceneryFeatures.slice(0,2));
+    // ---- Continuous trackside scenery along the whole 765km route (sparse, so the load stays small) ----
+    // Seeded RNG: the same trees appear in the same places on every run and every device.
+    let seed=20260;const rnd=()=>{seed=(seed*1664525+1013904223)%4294967296;return seed/4294967296;};
+    const stationKm=S.map(st=>turf.length(turf.lineSlice(S[0].lngLat,turf.nearestPointOnLine(line,st.lngLat,{units:'kilometers'}),line),km));
+    const nearStation=d=>stationKm.some(k=>Math.abs(k-d)<0.35);   // keep clear of the hand-placed station scenery
+    let alongCount=0;
+    for(let d=0.3;d<total-0.3;d+=0.25){
+      if(nearStation(d)) continue;
+      const p0=turf.along(line,d,km).geometry.coordinates,p1=turf.along(line,d+0.02,km).geometry.coordinates;
+      const hd=turf.bearing(p0,p1);
+      // utility pole line on the right side, every 250m
+      add('pole',turf.destination(p0,0.013,hd+90,km).geometry.coordinates,hd);alongCount++;
+      // a tree cluster roughly every 500m, either side, 28-110m back from the track
+      if(Math.round(d/0.25)%2===0){
+        const n=1+Math.floor(rnd()*3);
+        for(let k=0;k<n;k++){
+          const side=rnd()<0.5?-1:1,off=0.028+rnd()*0.082,sh=(rnd()-0.5)*0.12;
+          const base=turf.destination(p0,Math.abs(sh),sh>0?hd:hd+180,km).geometry.coordinates;
+          add('tree',turf.destination(base,off,hd+90*side,km).geometry.coordinates,rnd()*360);alongCount++;
+        }
+      }
+    }
+    console.log('[scenery] along-route items:',alongCount);
+    console.log('[scenery] features built:', sceneryFeatures.length);
     map.addSource('scenery',{type:'geojson',data:{type:'FeatureCollection',features:sceneryFeatures}});
-    // Three separate layers with a literal 'model-id' string each + a filter, instead of one layer with a
-    // data-driven ['get','modelId'] expression. The literal form is the exact pattern already proven to work
-    // on the train layer above; the data-driven form was only ever confirmed against type definitions, never
-    // seen actually render, and is the most likely real cause of nothing showing up after everything else
-    // checked out clean on paper.
+    map.addSource('sidings',{type:'geojson',data:{type:'FeatureCollection',features:sidingLines}});
+    map.addLayer({id:'siding-ballast',type:'line',source:'sidings',slot:'top',paint:{'line-color':'#453c31','line-width':4}});
+    map.addLayer({id:'siding-rail-l',type:'line',source:'sidings',slot:'top',paint:{'line-color':'#c7ccd3','line-width':0.5,'line-offset':-1.2}});
+    map.addLayer({id:'siding-rail-r',type:'line',source:'sidings',slot:'top',paint:{'line-color':'#c7ccd3','line-width':0.5,'line-offset':1.2}});
+    // One layer per model id with a literal model-id (the pattern confirmed working on screen).
     const sceneryPaint={'model-elevation-reference':'ground','model-cast-shadows':true,'model-receive-shadows':true,'model-roughness':0.8,'model-ambient-occlusion-intensity':0.6,'model-rotation':['get','rotation']};
-    ['scenery-station','scenery-tree','scenery-pole'].forEach(id=>{
+    IDS.forEach(n=>{
+      const id='scenery-'+n;
       map.addLayer({id:id+'-layer',type:'model',source:'scenery',slot:'top',filter:['==',['get','modelId'],id],layout:{'model-id':id,'model-allow-density-reduction':false},paint:sceneryPaint});
     });
   }catch(e){showProblem('Could not place the scenery models: '+e.message);warn('scenery layer failed: '+e.message);}
