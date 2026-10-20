@@ -4,7 +4,10 @@ window.CONFIG = {
   DURATION_S: 10800,
   // Chase camera: real distances in meters/km, matching Central Corridor's working values.
   CHASE_BEHIND_KM: 0.18,  // ~180m behind the train
-  CAM_SIDE_M: 0,          // directly behind the train
+  // A direct rear chase (0) only shows the train's narrow back end -- it reads as an unrecognizable striped
+  // box rather than a train, since you never see its length or side detail. A three-quarter offset shows the
+  // actual profile of the model.
+  CAM_SIDE_M: 0,
   CAM_HEIGHT_M: 50,       // elevated rear chase, matching the previous terrain-relative height
   // Official Western Corridor stops, traced from the GRDA map (main line, south to north). [lng, lat]
   STATIONS: [

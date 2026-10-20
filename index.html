@@ -355,9 +355,13 @@
                 releaseSplash("The app could not finish starting. Check your connection and reload the page.");
             }, true);
 
+            // app.js deliberately preloads satellite/terrain imagery for the full 765km route before starting
+            // playback (so nothing goes black mid-journey) -- on an ordinary connection that alone can take
+            // longer than 25s, which was firing this watchdog as a false "failed to load" error while the app
+            // was still correctly working in the background underneath it. 4 minutes gives it real headroom.
             window.setTimeout(function () {
                 releaseSplash("The map did not finish loading. Check your connection and reload the page.");
-            }, 25000);
+            }, 240000);
         })();
     </script>
 
