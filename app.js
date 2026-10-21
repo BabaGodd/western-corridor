@@ -28,6 +28,56 @@ function warn(m){console.error(m);if(!/debug/.test(location.search))return; // t
 function showProblem(msg){console.error(msg);let b=document.getElementById('problem');
   if(!b){b=document.createElement('div');b.id='problem';b.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:#ce1126;color:#fff;font:13px Inter,sans-serif;padding:10px 14px;border-radius:8px;text-align:center';document.body.appendChild(b);}
   b.textContent=msg;}
+// ---- Station stops: the journey clock (t) is still the 0..DURATION_S seek bar, but distance is no longer a straight
+// line of t. Each intermediate station gets a short dwell (train stands still), with a gentle ease out of / into
+// every stop, so the clock, the seek bar and the "total time" label all stay exactly as they were.
+const DWELL_S=C.STATION_DWELL_S??8,RAMP_S=C.STATION_RAMP_S??5,N_DWELL=Math.max(0,S.length-2);
+const MOVE_S=Math.max(1,C.DURATION_S-N_DWELL*DWELL_S),V0=total/MOVE_S;
+const segs=[];
+(function(){let t0=0;for(let i=0;i<S.length-1;i++){
+  const L=cum[i+1]-cum[i],T=L/V0,r=Math.min(RAMP_S,T/3),v=L/(T-r);
+  segs.push({t0,T,L,d0:cum[i],v,r});
+  t0+=T+((i+1<=S.length-2)?DWELL_S:0);
+}})();
+function dOf(tt){
+  if(tt<=0)return 0;
+  for(const g of segs){
+    if(tt<g.t0+g.T){
+      if(tt<g.t0)return g.d0;                       // standing at the station before this leg
+      const u=tt-g.t0,{T,r,v,L,d0}=g;
+      if(u<r)return d0+v*u*u/(2*r);                 // pulling away
+      if(u>T-r){const w=T-u;return d0+L-v*w*w/(2*r);} // braking into the next stop
+      return d0+v*(u-r/2);                          // cruising
+    }
+  }
+  return total;
+}
+// Station banner (built here so it needs no HTML/CSS edits): shows as the train approaches, while it stands, and
+// as it pulls away.
+(function(){
+  const st=document.createElement('style');
+  st.textContent='#stbanner{position:fixed;left:208px;top:calc(88px + env(safe-area-inset-top));transform:translateX(-12px);z-index:20;pointer-events:none;opacity:0;transition:opacity .6s ease,transform .6s ease;min-width:230px;max-width:min(300px,calc(100vw - 230px));padding:12px 20px 12px 18px;border-radius:14px;background:rgba(5,13,19,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);border-left:5px solid #fcd116;box-shadow:0 18px 55px rgba(0,0,0,.35);color:#fff;font-family:Inter,system-ui,sans-serif}#stbanner.on{opacity:1;transform:translateX(0)}#stbanner small{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#fcd116;margin-bottom:4px}#stbanner b{display:block;font-size:24px;font-weight:700;line-height:1.1}#stbanner span{display:block;font-size:13px;color:rgba(255,255,255,.72);margin-top:6px}@media (max-width:900px){#stbanner{left:12px;top:auto;bottom:120px;max-width:calc(100vw - 24px)}}#stbanner i{display:block;height:3px;margin-top:10px;border-radius:2px;background:linear-gradient(90deg,#ce1126 0 33%,#fcd116 33% 66%,#006b3f 66%)}';
+  document.head.appendChild(st);
+  const el=document.createElement('div');el.id='stbanner';el.innerHTML='<small></small><b></b><span></span><i></i>';
+  document.body.appendChild(el);
+  let shown=-2;
+  window.__updateBanner=function(d){
+    let idx=-1;
+    for(let i=0;i<S.length;i++){const k=d-cum[i];if(k>-0.55&&k<0.35){idx=i;break;}}
+    if(idx===shown)return;shown=idx;
+    if(idx<0){el.classList.remove('on');return;}
+    const q=el.children,last=idx===S.length-1;
+    q[0].textContent=idx===0?'Journey begins':last?'Final stop':'Station '+(idx+1)+' of '+S.length;
+    q[1].textContent=S[idx].name;
+    let sub=last?'Journey complete · '+Math.round(total)+' km':'Next: '+S[idx+1].name+' · '+(cum[idx+1]-cum[idx]).toFixed(0)+' km ahead';
+    let e=null;try{e=map.queryTerrainElevation(S[idx].lngLat);}catch(_){}
+    const facts=[Math.round(cum[idx])+' km from '+S[0].name];if(e!=null&&isFinite(e))facts.push('elevation '+Math.round(e)+' m');
+    if(S[idx].info)facts.push(S[idx].info);
+    q[2].innerHTML='';q[2].appendChild(document.createTextNode(sub));
+    const f=document.createElement('em');f.style.cssText='display:block;font-style:normal;font-size:12px;color:rgba(255,255,255,.55);margin-top:4px';f.textContent=facts.join(' · ');q[2].appendChild(f);
+    el.classList.add('on');
+  };
+})();
 sp(10);
 // Standard Satellite (not classic satellite-streets-v12): the model layer needs this style's built-in 3D
 // lighting/sky/shadow system to actually draw anything, not just avoid throwing an error. This style ships
@@ -63,9 +113,25 @@ map.on('style.load',()=>{
     map.setConfigProperty('basemap','lightPreset','day');
   }catch(e){warn('setConfigProperty: '+e.message);}
 });
+let mapLoaded=false;
+setTimeout(()=>{if(!mapLoaded){sp(10,'Still connecting to Mapbox… check your internet connection');console.error('[startup] map load event not fired after 30s');}},30000);
 let playing=false,t=0,last=performance.now(),sm=null,gnd=null,tg=null,ready=false;
 let lastTrainPosition=null;
+let forestTick=()=>{};
+// Cinematic camera: camB 0 = normal chase camera, 1 = high overview of the whole corridor. The page opens on the
+// overview; the first Play descends to the chase view (train waits), and arriving at Hamile pulls back out.
+let camB=0,camAnim=null,introHold=false;
+const INTRO_MS=C.INTRO_MS??7000,OUTRO_MS=C.OUTRO_MS??7000;
+const easeIO=u=>u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2;
+function camAnimate(to,dur,onDone){camAnim={from:camB,to,t0:performance.now(),dur,onDone};}
+function camBlendNow(){
+  if(camAnim){const u=(performance.now()-camAnim.t0)/camAnim.dur;
+    if(u>=1){camB=camAnim.to;const cb=camAnim.onDone;camAnim=null;if(cb)cb();}
+    else camB=camAnim.from+(camAnim.to-camAnim.from)*easeIO(u);}
+  return camB;
+}
 map.on('load',()=>{
+  mapLoaded=true;
   sp(45);
   // Standard Satellite ships its own terrain -- no separate mapbox-dem source, no manual setTerrain, no
   // manual sky layer; adding our own on top of this style's built-in one caused drape/terrain conflicts before.
@@ -109,7 +175,7 @@ map.on('load',()=>{
   // a bare dot on the map, without reopening the density/visibility problems the preload and tile cache exist
   // to prevent. Each model's own geometry is already modeled in real-world meters, so model-scale stays [1,1,1].
   try{
-    const IDS=['station','canopy','tree','pole','flag','flag-grda','sign','signal','fence','watertower','wagon'];
+    const IDS=['station','canopy','tree','pole','flag','flag-grda','sign','signal','fence','watertower','wagon','house-a','house-b','house-c','hut','field','person-a','person-b','person-c'];
     IDS.forEach(n=>map.addModel('scenery-'+n,'./models/'+(n==='flag-grda'?'flag-grda':n)+'.glb'));
     const sceneryFeatures=[];
     const add=(id,c,yaw)=>sceneryFeatures.push({...pt(c),properties:{modelId:'scenery-'+id,rotation:[0,0,yaw]}});
@@ -131,6 +197,10 @@ map.on('load',()=>{
       add('station',bp,hd-90);
       add('canopy',bp,hd-90);
       add('sign',at(o,hd,14,14),hd);
+      // Waiting passengers on the platform (deterministic per station).
+      {let ps=0;for(const ch of s.name)ps=(ps*37+ch.charCodeAt(0))>>>0;const pr=()=>{ps=(ps*1664525+1013904223)>>>0;return ps/4294967296;};
+       const nP=5+Math.floor(pr()*5);
+       for(let k=0;k<nP;k++) add(['person-a','person-b','person-c'][Math.floor(pr()*3)],at(o,hd,20.5+pr()*1.6,(pr()-0.5)*11),pr()*360);}
       // Two flags at every station: Ghana + GRDA, side by side, facing the approaching (rear-chase) camera.
       add('flag',at(o,hd,16,-5),hd);
       add('flag-grda',at(o,hd,16,5),hd);
@@ -143,6 +213,25 @@ map.on('load',()=>{
       [[0.04,20],[0.05,55],[0.045,100],[0.052,145]].forEach(([dist,ang])=>{
         add('tree',turf.destination(bp,dist,hd+ang,km).geometry.coordinates,ang*3);
       });
+      // ---- Village around the station: houses (and huts in the savanna north), plus a few crop fields ----
+      {
+        const big={Takoradi:16,Sekondi:14,Tarkwa:12,Dunkwa:12,Sunyani:18,Wa:16,Bibiani:10,Bole:10,Jirapa:9,Bamboi:8};
+        const nH=big[s.name]||7, north=s.lngLat[1]>8.0;
+        let vs=0;for(const ch of s.name)vs=(vs*31+ch.charCodeAt(0))>>>0;
+        const vr=()=>{vs=(vs*1664525+1013904223)>>>0;return vs/4294967296;};
+        for(let k=0;k<nH;k++){
+          const side=vr()<0.5?-1:1,along=(vr()-0.5)*560,off=58+vr()*170;
+          if(Math.abs(along)<60&&side>0) continue;           // keep the station yard clear
+          const id=(north&&vr()<0.55)?'hut':['house-a','house-b','house-c'][Math.floor(vr()*3)];
+          add(id,at(o,hd,side*off,along),(side>0?hd+90:hd-90)+(vr()-0.5)*26);
+          if(vr()<0.4) add('tree',at(o,hd,side*(off+14+vr()*16),along+(vr()-0.5)*20),vr()*360);
+        }
+        const nF=nH>=12?4:2;
+        for(let k=0;k<nF;k++){
+          const side=k%2?-1:1,along=(vr()-0.5)*520,off=120+vr()*160;
+          add('field',at(o,hd,side*off,along),hd-90+(vr()-0.5)*14);
+        }
+      }
       if(WATER.includes(s.name)) add('watertower',at(o,hd,70,-20),0);
       if(s.name==='Takoradi'){
         // Freight siding with parked wagons, on the left of the main line.
@@ -183,9 +272,68 @@ map.on('load',()=>{
     const sceneryPaint={'model-elevation-reference':'ground','model-cast-shadows':true,'model-receive-shadows':true,'model-roughness':0.8,'model-ambient-occlusion-intensity':0.6,'model-rotation':['get','rotation']};
     IDS.forEach(n=>{
       const id='scenery-'+n;
-      map.addLayer({id:id+'-layer',type:'model',source:'scenery',slot:'top',filter:['==',['get','modelId'],id],layout:{'model-id':id,'model-allow-density-reduction':false},paint:sceneryPaint});
+      map.addLayer({id:id+'-layer',type:'model',source:'scenery',slot:'top',minzoom:11,filter:['==',['get','modelId'],id],layout:{'model-id':id,'model-allow-density-reduction':false},paint:sceneryPaint});
     });
   }catch(e){showProblem('Could not place the scenery models: '+e.message);warn('scenery layer failed: '+e.message);}
+  // ---- Dense forest where the land really is forest ------------------------------------------------------------
+  // Mapbox's own landcover data (mapbox-terrain-v2, class 'wood') says where forest is. A near-invisible probe layer
+  // makes the map load those tiles; as the train moves, trees are scattered on a fixed grid inside the wood polygons
+  // within ~2.4km of it (deterministic per grid cell, so the same spot always gets the same tree). Set
+  // FOREST:false in config.js to switch it off, FOREST_SHADOWS:true for tree shadows (prettier, heavier).
+  if(C.FOREST!==false){
+    try{
+      map.addModel('forest-a','./models/forest-a.glb');
+      map.addModel('forest-b','./models/forest-b.glb');
+      map.addSource('forest-lc',{type:'vector',url:'mapbox://mapbox.mapbox-terrain-v2'});
+      map.addLayer({id:'forest-lc-probe',type:'fill',source:'forest-lc','source-layer':'landcover',slot:'middle',filter:['==',['get','class'],'wood'],paint:{'fill-color':'#000000','fill-opacity':0.01}});
+      map.addSource('forest',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+      const TIERS=[0.8,1.0,1.3],fp={'model-elevation-reference':'ground','model-cast-shadows':C.FOREST_SHADOWS===true,'model-receive-shadows':true,'model-roughness':0.9,'model-ambient-occlusion-intensity':0.5,'model-rotation':['get','rotation']};
+      ['forest-a','forest-b'].forEach(id=>TIERS.forEach((sc,ti)=>{
+        map.addLayer({id:id+'-t'+ti,type:'model',source:'forest',slot:'top',minzoom:11,filter:['all',['==',['get','modelId'],id],['==',['get','tier'],ti]],layout:{'model-id':id,'model-allow-density-reduction':false},paint:{...fp,'model-scale':[sc,sc,sc]}});
+      }));
+      const GRID=0.0004,RADIUS=0.022,REFRESH_KM=0.8,MAXTREES=3500;
+      const hash=(ix,iy,salt)=>{let h=Math.imul(ix,73856093)^Math.imul(iy,19349663)^Math.imul(salt,83492791);h^=h>>>13;h=Math.imul(h,0x5bd1e995);h^=h>>>15;return (h>>>0)/4294967296;};
+      let lastD=-1e9,busy=false;
+      function refreshForest(pos,d){
+        if(busy)return;busy=true;const t0=performance.now();
+        try{
+          if(!map.getSource('forest-lc')){busy=false;return;}
+          const feats=map.querySourceFeatures('forest-lc',{sourceLayer:'landcover',filter:['==',['get','class'],'wood']});
+          const local=turf.lineSliceAlong(line,Math.max(0,d-3),Math.min(total,d+3),km);
+          const seen=new Set(),out=[];
+          const x0=pos[0]-RADIUS,x1=pos[0]+RADIUS,y0=pos[1]-RADIUS,y1=pos[1]+RADIUS;
+          for(const f of feats){
+            if(!f.geometry||(f.geometry.type!=='Polygon'&&f.geometry.type!=='MultiPolygon'))continue;
+            const bb=turf.bbox(f.geometry);
+            if(bb[2]<x0||bb[0]>x1||bb[3]<y0||bb[1]>y1)continue;
+            const ax=Math.max(bb[0],x0),bx=Math.min(bb[2],x1),ay=Math.max(bb[1],y0),by=Math.min(bb[3],y1);
+            for(let ix=Math.ceil(ax/GRID);ix*GRID<=bx;ix++)for(let iy=Math.ceil(ay/GRID);iy*GRID<=by;iy++){
+              const key=ix+'_'+iy;if(seen.has(key))continue;
+              if(hash(ix,iy,1)>0.72)continue;
+              const lng=(ix+(hash(ix,iy,2)-0.5)*0.8)*GRID,lat=(iy+(hash(ix,iy,3)-0.5)*0.8)*GRID,c=[lng,lat];
+              if(!turf.booleanPointInPolygon(c,f.geometry))continue;
+              seen.add(key);
+              if(turf.pointToLineDistance(c,local,km)<0.03)continue;                      // keep the track corridor clear
+              if(S.some(st=>Math.abs(st.lngLat[0]-lng)<0.003&&Math.abs(st.lngLat[1]-lat)<0.003))continue; // station yards
+              const r=hash(ix,iy,4),north=lat>8.0;
+              out.push({type:'Feature',geometry:{type:'Point',coordinates:c},properties:{modelId:(north?r<0.75:r<0.12)?'forest-b':'forest-a',tier:Math.min(2,Math.floor(hash(ix,iy,5)*3)),rotation:[0,0,hash(ix,iy,6)*360]}});
+              if(out.length>=MAXTREES)break;
+            }
+            if(out.length>=MAXTREES)break;
+          }
+          map.getSource('forest').setData({type:'FeatureCollection',features:out});
+          lastD=d;
+          console.log('[forest] trees:',out.length,'from',feats.length,'wood features in',Math.round(performance.now()-t0),'ms @',d.toFixed(1),'km');
+        }catch(e){warn('forest refresh: '+e.message);}
+        busy=false;
+      }
+      forestTick=(pos,d)=>{if(Math.abs(d-lastD)>REFRESH_KM)refreshForest(pos,d);};
+      // Tiles may still be arriving right after a seek or pause: when the map settles, refresh once for that spot
+      // (settledD stops this from looping on its own setData).
+      let settledD=-1e9;
+      map.on('idle',()=>{if(!ready||playing)return;const dd=dOf(t);if(Math.abs(dd-settledD)>0.01&&lastTrainPosition){settledD=dd;refreshForest(lastTrainPosition,dd);}});
+    }catch(e){warn('forest setup failed: '+e.message);}
+  }
   // Remove ONLY the ground-level haze that was washing out the terrain -- not the sky itself, and not anything
   // else about the style's fog. setFog() replaces the whole fog object, so start from exactly what the Standard
   // style already has and change nothing but 'color' -- the single term that creates ground-level haze.
@@ -199,7 +347,7 @@ map.on('load',()=>{
   // of being discovered for the first time mid-playback (which is what produced the black terrain the client
   // saw live). This is necessarily slow on a long route -- that's the trade for "never goes black again", and
   // it's why index.html's own watchdog timeout is set to 4 minutes rather than a short one.
-  function renderAtDistance(d){t=(d/total)*C.DURATION_S;try{render();}catch(e){warn('prewarm render @'+d.toFixed(1)+'km: '+e.message);}}
+  function renderAtDistance(d){t=(d/total)*C.DURATION_S;try{render(d);}catch(e){warn('prewarm render @'+d.toFixed(1)+'km: '+e.message);}}
   function prewarmRoute(done){
     // 10km steps (not 6): fewer total tile-request bursts over 765km. STEP_DELAY_MS deliberately paces those
     // bursts -- jumping the camera along the whole route as fast as 'idle' allowed was firing tile requests
@@ -208,12 +356,17 @@ map.on('load',()=>{
     // whole page, not just the preload -- that, not the models, was the real cause of nothing looking right.
     // If 429s still show up in the console after this, the account's rate limit itself needs raising at
     // account.mapbox.com, which no amount of client-side pacing alone can fully work around.
-    const STEP_KM=10,STEP_DELAY_MS=450,steps=Math.max(1,Math.ceil(total/STEP_KM));
+    // PRELOAD_KM (config.js): how much of the route to pre-fetch behind the splash screen. The full 765km walk takes
+    // minutes (77 steps, each waiting for the map to settle) -- far too long for a live presentation -- so the default is
+    // just the first stretch; the rest loads on demand as the train reaches it. PRELOAD_KM:765 restores the full pass.
+    const PRELOAD_KM=Math.min(total,C.PRELOAD_KM??60);
+    const STEP_KM=10,STEP_DELAY_MS=450,steps=Math.max(1,Math.ceil(PRELOAD_KM/STEP_KM));
     let i=0;
     (function next(){
+      if(aborted)return;
       if(i>steps){done();return;}
-      renderAtDistance(Math.min(total,i*STEP_KM));
-      sp(15+Math.round((i/steps)*80),'Loading full route terrain… '+Math.round((i/steps)*100)+'%');
+      renderAtDistance(Math.min(PRELOAD_KM,i*STEP_KM));
+      sp(15+Math.round((i/steps)*80),'Loading terrain… '+Math.round((i/steps)*100)+'%');
       i++;
       let settled=false;
       const proceed=()=>{if(settled)return;settled=true;map.off('idle',onIdle);setTimeout(next,STEP_DELAY_MS);};
@@ -224,21 +377,28 @@ map.on('load',()=>{
     })();
   }
   sp(15,'Loading full route terrain… 0%');
-  prewarmRoute(()=>{
+  // Startup can finish two ways: the preload walk completes, or this hard cap (45s) fires first. Either way the splash
+  // is released exactly once, so a slow connection or a stuck tile can never leave the page on the splash screen.
+  let started=false,aborted=false;
+  function finishStartup(reason){
+    if(started)return;started=true;aborted=true;
+    console.log('[startup] finished:',reason);
     // Clear camera/terrain smoothing and the train's last-drawn position so real playback starts clean from
     // Takoradi, not mid-interpolation from wherever the last preload step left off.
     t=0;sm=null;gnd=null;tg=null;lastTrainPosition=null;
     try{render();}catch(e){warn('post-preload render: '+e.message);}
-    // Critical state first, BEFORE anything that could throw (like hideSplashScreen touching a splash element
-    // that index.html's own watchdog may already have removed if it raced us). Page loads paused: the splash
-    // clears onto the stationary train at Takoradi with the Play icon showing -- playing stays false here
-    // instead of auto-starting.
+    // Critical state first, BEFORE anything that could throw. Page loads paused on the stationary train.
+    if(C.INTRO!==false){camB=1;}
     ready=true;last=performance.now();
+    try{render();}catch(e){}
     try{window.hideSplashScreen();}catch(e){warn('hideSplashScreen: '+e.message);}
-  });
+  }
+  console.log('[startup] map load fired, preloading');
+  setTimeout(()=>finishStartup('45s time cap'),C.STARTUP_CAP_MS??45000);
+  prewarmRoute(()=>finishStartup('preload complete'));
 });
-function render(){
-  const p=t/C.DURATION_S,d=p*total,pos=at(d);
+function render(dForce){
+  const p=t/C.DURATION_S,d=(dForce!=null)?dForce:dOf(t),pos=at(d);
   // Heading from a short lookahead/lookbehind sample (not the point-to-point segment), recalculated every
   // frame, so the train visibly turns through curves rather than snapping station-to-station.
   const LOOK=0.05,d0=Math.max(0,d-LOOK),d1=Math.min(total,d+LOOK),headingDeg=turf.bearing(at(d0),at(d1));
@@ -261,8 +421,18 @@ function render(){
   const tgRaw=map.queryTerrainElevation(pos);if(tgRaw!=null)tg=tg==null?tgRaw:tg+(tgRaw-tg)*.3;
   const camAlt=(gnd??0)+C.CAM_HEIGHT_M,trainAlt=(tg??0)+TRAIN_LOOK_LIFT_M;
   const fc=map.getFreeCameraOptions();
+  const bl=camBlendNow();
+  if(bl>0.0005){
+    // Blend chase camera -> corridor overview: lng/lat linear, altitude log-interpolated so the descent feels natural.
+    const ovC=[(S[0].lngLat[0]+S[S.length-1].lngLat[0])/2,(S[0].lngLat[1]+S[S.length-1].lngLat[1])/2];
+    const ovPos=[ovC[0],ovC[1]-4.0],ovAlt=C.OVERVIEW_ALT_M??1300000;
+    const L=(a,b)=>a+(b-a)*bl;
+    const pLL=[L(sm[0],ovPos[0]),L(sm[1],ovPos[1])],pAlt=Math.exp(L(Math.log(camAlt),Math.log(ovAlt)));
+    fc.position=mapboxgl.MercatorCoordinate.fromLngLat(pLL,pAlt);
+    fc.lookAtPoint({lng:L(pos[0],ovC[0]),lat:L(pos[1],ovC[1]),},[0,0,1],L(trainAlt,0));
+  }else{
   fc.position=mapboxgl.MercatorCoordinate.fromLngLat(sm,camAlt);
-  fc.lookAtPoint({lng:pos[0],lat:pos[1]},[0,0,1],trainAlt); // look directly at the train, not behind it -- this is what leaves open track visible ahead of it on screen
+  fc.lookAtPoint({lng:pos[0],lat:pos[1]},[0,0,1],trainAlt);} // look directly at the train, not behind it -- this is what leaves open track visible ahead of it on screen
   map.setFreeCameraOptions(fc);
   let i=0;while(i<S.length-1&&cum[i+1]<=d)i++;
   const nx=Math.min(i+1,S.length-1);
@@ -271,17 +441,22 @@ function render(){
   txt('j-rem',Math.max(0,total-d).toFixed(0)+' km');
   txt('t-el',fmt(t));txt('pct',Math.round(p*100)+'%');setWidth('prog',p*100+'%');
   const track=$('prog-track');if(track)track.setAttribute('aria-valuenow',String(Math.round(p*100)));
-  txt('o-status',p>=1?'Arrived':playing?'In service':'Paused');
+  const dwelling=playing&&t<C.DURATION_S&&i>0&&i<S.length-1&&Math.abs(d-cum[i])<1e-6;
+  txt('o-status',p>=1?'Arrived':dwelling?'Station stop':playing?'In service':'Paused');
+  try{window.__updateBanner&&window.__updateBanner(d);}catch(e){}
+  if(ready)forestTick(pos,d);
 }
-function arrive(){playing=false;setHidden('arrive',false);txt('play','▶');}
+function arrive(){playing=false;if(C.INTRO!==false)camAnimate(1,OUTRO_MS);setHidden('arrive',false);txt('play','▶');}
 function frame(now){const dt=(now-last)/1000;last=now;
-  if(ready){if(playing){t=Math.min(C.DURATION_S,t+dt);if(t>=C.DURATION_S)arrive();}try{render();}catch(e){warn('render: '+e.message);}}
+  if(ready){if(playing&&!introHold){t=Math.min(C.DURATION_S,t+dt);if(t>=C.DURATION_S)arrive();}try{render();}catch(e){warn('render: '+e.message);}}
   requestAnimationFrame(frame);}
 requestAnimationFrame(frame);
 // Guard these too: same reasoning as the txt()/setHidden()/setWidth() helpers above -- a missing control
 // element shouldn't be able to throw and take the rest of the page down with it.
-if($('play'))$('play').onclick=()=>{if(t>=C.DURATION_S)return;playing=!playing;txt('play',playing?'❚❚':'▶');};
-const restart=()=>{t=0;sm=null;playing=true;setHidden('arrive',true);txt('play','❚❚');};
+function startDescent(){if(camB>0&&!introHold&&!(camAnim&&camAnim.to===0)){introHold=true;camAnimate(0,INTRO_MS,()=>{introHold=false;last=performance.now();});}}
+function togglePlay(){if(t>=C.DURATION_S)return;playing=!playing;if(playing)startDescent();txt('play',playing?'❚❚':'▶');}
+if($('play'))$('play').onclick=togglePlay;
+const restart=()=>{t=0;sm=null;playing=true;setHidden('arrive',true);txt('play','❚❚');camAnim=null;introHold=false;if(camB>0)startDescent();};
 if($('restart'))$('restart').onclick=restart;
 if($('again'))$('again').onclick=restart;
 const track=$('prog-track');
@@ -289,6 +464,7 @@ if(track){
   let dragging=false,resumeAfterSeek=false;
   const seekTo=(fraction)=>{
     t=Math.max(0,Math.min(1,fraction))*C.DURATION_S;
+    camAnim=null;camB=0;introHold=false;
     sm=null;gnd=null;tg=null;
     setHidden('arrive',true);
     last=performance.now();
@@ -326,4 +502,44 @@ if(track){
     if(t>=C.DURATION_S)arrive();
   });
 }
+
+// ---- Presentation controls (keyboard) ----------------------------------------------------------------------------
+//  P presentation mode (hides panels, cursor; mouse move brings the controls back)   Space play/pause
+//  N next station   B previous station   L cycle light (day/dusk/night/dawn)   F fullscreen
+const arrT=i=>i<=0?0:(segs[i-1].t0+segs[i-1].T);
+function jumpToT(tt){
+  t=Math.max(0,Math.min(C.DURATION_S,tt));camAnim=null;camB=0;introHold=false;sm=null;gnd=null;tg=null;
+  setHidden('arrive',true);last=performance.now();
+  if(ready){try{render();}catch(e){warn('jump render: '+e.message);}}
+}
+const PRESETS=['day','dusk','night','dawn'];let presetNow='day';
+function setPreset(name){if(name===presetNow)return;presetNow=name;try{map.setConfigProperty('basemap','lightPreset',name);}catch(e){warn('lightPreset: '+e.message);}}
+const _tod=C.TIME_OF_DAY_JOURNEY===true;
+if(_tod)setInterval(()=>{if(!ready)return;const p=t/C.DURATION_S;setPreset(p<0.08?'dawn':p<0.72?'day':'dusk');},1500);
+(function(){
+  const st=document.createElement('style');
+  st.textContent='body.present .panel,body.present .brand,body.present .bottom{opacity:0!important;pointer-events:none!important;transition:opacity .5s ease}body.present.ui .bottom{opacity:1!important;pointer-events:auto!important}body.present{cursor:none}body.present.ui{cursor:default}#ptoast{position:fixed;left:50%;bottom:9vh;transform:translateX(-50%);z-index:30;background:rgba(5,13,19,.85);color:#fff;font:13px Inter,system-ui,sans-serif;padding:10px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.14);opacity:0;pointer-events:none;transition:opacity .4s}#ptoast.on{opacity:1}';
+  document.head.appendChild(st);
+  const toast=document.createElement('div');toast.id='ptoast';document.body.appendChild(toast);
+  let tt=null;const say=m=>{toast.textContent=m;toast.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>toast.classList.remove('on'),3500);};
+  let uiT=null;
+  document.addEventListener('mousemove',()=>{if(!document.body.classList.contains('present'))return;document.body.classList.add('ui');clearTimeout(uiT);uiT=setTimeout(()=>document.body.classList.remove('ui'),2500);});
+  const setPresent=on=>{document.body.classList.toggle('present',on);document.body.classList.remove('ui');if(on)say('Presentation mode · Space play/pause · N / B next / previous station · L light · F fullscreen · P exit');};
+  if(/[?&]present/.test(location.search))setPresent(true);
+  document.addEventListener('keydown',e=>{
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    const tag=(e.target&&e.target.tagName)||'';if(/INPUT|TEXTAREA|SELECT/.test(tag))return;
+    const k=e.key.toLowerCase();
+    if(k==='p'){setPresent(!document.body.classList.contains('present'));}
+    else if(k===' '&&tag!=='BUTTON'){e.preventDefault();if(ready)togglePlay();}
+    else if(k==='n'||k==='b'){
+      if(!ready)return;let target=-1;
+      if(k==='n'){for(let i=0;i<S.length;i++)if(arrT(i)>t+0.5){target=i;break;}}
+      else{for(let i=S.length-1;i>=0;i--)if(arrT(i)<t-1.5){target=i;break;}}
+      if(target>=0){jumpToT(arrT(target));say((target===0?'Start: ':'Station: ')+S[target].name);}
+    }
+    else if(k==='l'){setPreset(PRESETS[(PRESETS.indexOf(presetNow)+1)%PRESETS.length]);say('Light: '+presetNow);}
+    else if(k==='f'){try{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}catch(_){}}
+  });
+})();
 })();
