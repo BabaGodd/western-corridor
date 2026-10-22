@@ -152,9 +152,9 @@ map.on('load',()=>{
   map.addLayer({id:'route-rail-l',type:'line',source:'route',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#c7ccd3','line-width':0.6,'line-offset':-1.6}});
   map.addLayer({id:'route-rail-r',type:'line',source:'route',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#c7ccd3','line-width':0.6,'line-offset':1.6}});
   sp(70);
-  map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:S.map(s=>({...pt(s.lngLat),properties:{name:s.name}}))}});
+  map.addSource('stations',{type:'geojson',data:{type:'FeatureCollection',features:S.map((s,i)=>({...pt(s.lngLat),properties:{name:s.name,side:(i%2===0)?'left':'right',prio:(i===0||i===S.length-1)?0:1+i}}))}});
   map.addLayer({id:'st-dot',type:'circle',source:'stations',slot:'top',paint:{'circle-radius':5,'circle-color':'#ce1126','circle-stroke-color':'#fff','circle-stroke-width':1.5}});
-  map.addLayer({id:'st-lbl',type:'symbol',source:'stations',slot:'top',layout:{'text-field':['get','name'],'text-font':['DIN Pro Bold','Arial Unicode MS Bold'],'text-size':12,'text-offset':[0,1.3],'text-anchor':'top','text-allow-overlap':true},paint:{'text-color':'#fff','text-halo-color':'#071018','text-halo-width':1.6}});
+  map.addLayer({id:'st-lbl',type:'symbol',source:'stations',slot:'top',layout:{'text-field':['get','name'],'text-font':['DIN Pro Bold','Arial Unicode MS Bold'],'text-size':['interpolate',['linear'],['zoom'],4,10,9,12,14,13],'text-anchor':['case',['==',['get','side'],'left'],'right','left'],'text-offset':['case',['==',['get','side'],'left'],['literal',[-0.85,0]],['literal',[0.85,0]]],'text-allow-overlap':false,'text-padding':3,'symbol-sort-key':['get','prio']},paint:{'text-color':'#fff','text-halo-color':'#071018','text-halo-width':1.6}});
   // Register the GLB once, then move its GeoJSON point as the journey advances.
   try{
     const initialHeading=turf.bearing(at(0),at(Math.min(0.05,total)));
@@ -278,7 +278,7 @@ map.on('load',()=>{
     const sceneryPaint={'model-elevation-reference':'ground','model-cast-shadows':true,'model-receive-shadows':true,'model-roughness':0.8,'model-ambient-occlusion-intensity':0.6,'model-rotation':['get','rotation']};
     IDS.forEach(n=>{
       const id='scenery-'+n;
-      map.addLayer({id:id+'-layer',type:'model',source:'scenery',slot:'top',minzoom:11,filter:['==',['get','modelId'],id],layout:{'model-id':id,'model-allow-density-reduction':false},paint:sceneryPaint});
+      map.addLayer({id:id+'-layer',type:'model',source:'scenery',slot:'top',minzoom:12.5,filter:['==',['get','modelId'],id],layout:{'model-id':id,'model-allow-density-reduction':false},paint:sceneryPaint});
     });
   }catch(e){showProblem('Could not place the scenery models: '+e.message);warn('scenery layer failed: '+e.message);}
   // ---- Dense forest where the land really is forest ------------------------------------------------------------
@@ -295,7 +295,7 @@ map.on('load',()=>{
       map.addSource('forest',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
       const TIERS=[0.8,1.0,1.3],fp={'model-elevation-reference':'ground','model-cast-shadows':C.FOREST_SHADOWS===true,'model-receive-shadows':true,'model-roughness':0.9,'model-ambient-occlusion-intensity':0.5,'model-rotation':['get','rotation']};
       ['forest-a','forest-b'].forEach(id=>TIERS.forEach((sc,ti)=>{
-        map.addLayer({id:id+'-t'+ti,type:'model',source:'forest',slot:'top',minzoom:11,filter:['all',['==',['get','modelId'],id],['==',['get','tier'],ti]],layout:{'model-id':id,'model-allow-density-reduction':false},paint:{...fp,'model-scale':[sc,sc,sc]}});
+        map.addLayer({id:id+'-t'+ti,type:'model',source:'forest',slot:'top',minzoom:12.5,filter:['all',['==',['get','modelId'],id],['==',['get','tier'],ti]],layout:{'model-id':id,'model-allow-density-reduction':false},paint:{...fp,'model-scale':[sc,sc,sc]}});
       }));
       const GRID=0.0004,RADIUS=0.022,REFRESH_KM=0.8,MAXTREES=3500;
       const hash=(ix,iy,salt)=>{let h=Math.imul(ix,73856093)^Math.imul(iy,19349663)^Math.imul(salt,83492791);h^=h>>>13;h=Math.imul(h,0x5bd1e995);h^=h>>>15;return (h>>>0)/4294967296;};
@@ -347,7 +347,7 @@ map.on('load',()=>{
   try{
     const flagFeats=flagF.map(f=>({type:'Feature',geometry:{type:'Point',coordinates:f.c},properties:{modelId:'scenery-'+f.id,rotation:[0,0,f.yaw]}}));
     map.addSource('flags',{type:'geojson',data:{type:'FeatureCollection',features:flagFeats}});
-    ['flag','flag-grda'].forEach(n=>map.addLayer({id:'flagsrc-'+n,type:'model',source:'flags',slot:'top',minzoom:11,filter:['==',['get','modelId'],'scenery-'+n],layout:{'model-id':'scenery-'+n,'model-allow-density-reduction':false},paint:{'model-elevation-reference':'ground','model-cast-shadows':true,'model-receive-shadows':true,'model-roughness':0.8,'model-rotation':['get','rotation']}}));
+    ['flag','flag-grda'].forEach(n=>map.addLayer({id:'flagsrc-'+n,type:'model',source:'flags',slot:'top',minzoom:12.5,filter:['==',['get','modelId'],'scenery-'+n],layout:{'model-id':'scenery-'+n,'model-allow-density-reduction':false},paint:{'model-elevation-reference':'ground','model-cast-shadows':true,'model-receive-shadows':true,'model-roughness':0.8,'model-rotation':['get','rotation']}}));
     fx.flags={feats:flagFeats,base:flagF};
   }catch(e){warn('flags setup: '+e.message);}
   try{
@@ -455,7 +455,7 @@ map.on('load',()=>{
   // down that exact path once so every tile is already cached when the client presses Play.
   function warmDescent(done){
     if(C.INTRO===false||aborted){done();return;}
-    const stepsB=[1,0.93,0.85,0.76,0.66,0.56,0.46,0.37,0.28,0.2,0.13,0.07,0.03,0];let i=0;
+    const stepsB=[1,0.93,0.86,0.79,0.72,0.65,0.58,0.52,0.46,0.4,0.34,0.28,0.22,0.17,0.12,0.08,0.04,0];let i=0;
     (function next(){
       if(aborted)return;
       if(i>=stepsB.length){done();return;}
@@ -464,7 +464,7 @@ map.on('load',()=>{
       sp(90+Math.round((i/stepsB.length)*9),'Preparing the journey…');
       i++;
       let settled=false;const proceed=()=>{if(settled)return;settled=true;map.off('idle',onIdle);setTimeout(next,120);};
-      const onIdle=()=>proceed();map.once('idle',onIdle);setTimeout(proceed,1500);
+      const onIdle=()=>proceed();map.once('idle',onIdle);setTimeout(proceed,1300);
     })();
   }
   prewarmRoute(()=>warmDescent(()=>finishStartup('preload complete')));
@@ -514,13 +514,25 @@ function render(dForce){
   const fc=map.getFreeCameraOptions();
   const bl=camBlendNow();
   if(bl>0.0005){
-    // Blend chase camera -> corridor overview: lng/lat linear, altitude log-interpolated so the descent feels natural.
+    // Fly-in between the chase camera and the corridor overview. The camera keeps a fixed geometry relative to the
+    // train: its distance from the train and its height both change by the SAME proportion (log-interpolated), so
+    // the view always looks down at a sensible angle and the map only ever needs the tiles around the train.
+    // (The earlier version slid the position linearly while the height shrank logarithmically, which left the camera
+    // skimming the ground tens of km away from Takoradi -- a huge, constantly-changing set of tiles, i.e. the jerking.)
     const ovC=[(S[0].lngLat[0]+S[S.length-1].lngLat[0])/2,(S[0].lngLat[1]+S[S.length-1].lngLat[1])/2];
     const ovPos=[ovC[0],ovC[1]-4.0],ovAlt=C.OVERVIEW_ALT_M??1300000;
     const L=(a,b)=>a+(b-a)*bl;
-    const pLL=[L(sm[0],ovPos[0]),L(sm[1],ovPos[1])],pAlt=Math.exp(L(Math.log(camAlt),Math.log(ovAlt)));
+    const M=111320,cosL=Math.cos(lookP[1]*Math.PI/180);
+    const c1=[(sm[0]-lookP[0])*M*cosL,(sm[1]-lookP[1])*M],c0=[(ovPos[0]-lookP[0])*M*cosL,(ovPos[1]-lookP[1])*M];
+    const r1=Math.max(30,Math.hypot(c1[0],c1[1])),r0=Math.hypot(c0[0],c0[1]);
+    const th1=Math.atan2(c1[0],c1[1]),th0=Math.atan2(c0[0],c0[1]);
+    let dth=th0-th1;while(dth>Math.PI)dth-=2*Math.PI;while(dth<-Math.PI)dth+=2*Math.PI;
+    const r=Math.exp(L(Math.log(r1),Math.log(r0))),th=th1+dth*bl;
+    const pLL=[lookP[0]+r*Math.sin(th)/(M*cosL),lookP[1]+r*Math.cos(th)/M];
+    const pAlt=Math.exp(L(Math.log(camAlt),Math.log(ovAlt)));
+    const g=Math.pow(bl,6);                       // the aim point only drifts to the corridor centre when we're far away
     fc.position=mapboxgl.MercatorCoordinate.fromLngLat(pLL,pAlt);
-    fc.lookAtPoint({lng:L(lookP[0],ovC[0]),lat:L(lookP[1],ovC[1]),},[0,0,1],L(trainAlt,0));
+    fc.lookAtPoint({lng:lookP[0]+(ovC[0]-lookP[0])*g,lat:lookP[1]+(ovC[1]-lookP[1])*g},[0,0,1],trainAlt*(1-g));
   }else{
   fc.position=mapboxgl.MercatorCoordinate.fromLngLat(sm,camAlt);
   fc.lookAtPoint({lng:lookP[0],lat:lookP[1]},[0,0,1],trainAlt);} // look directly at the train, not behind it -- this is what leaves open track visible ahead of it on screen
@@ -754,11 +766,13 @@ function makeSmokeLayer(THREE){
 //   sounds/train-loop.mp3     a seamless loop of a train running (engine rumble + rail clatter)
 //   sounds/train-horn.mp3     one locomotive horn blast (played as the train nears each station)
 //   sounds/station-arrive.mp3 (optional) brake squeal / bell for the moment the train stops
-// (.ogg works too.) With no files the page is simply silent -- nothing synthetic is ever played.
+// (.ogg and .wav work too; mp3/ogg are tried first.) The bundled train-loop.wav / train-horn.wav / station-arrive.wav were
+// generated for this project; drop your own recordings next to them to replace them.
 const SND_BASE=C.SOUND_BASE||'./sounds/';
 const snd={ctx:null,on:C.SOUND!==false,n:null,bufs:{},horned:{},atSt:false};
 function sndLoad(base){
-  const exts=['mp3','ogg'];let i=0;
+  // your own mp3/ogg recordings win over the bundled .wav files
+  const exts=['mp3','ogg','wav'];let i=0;
   const tryNext=()=>{
     if(i>=exts.length)return Promise.resolve(null);
     const url=SND_BASE+base+'.'+exts[i++];
