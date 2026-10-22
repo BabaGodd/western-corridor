@@ -118,11 +118,16 @@ setTimeout(()=>{if(!mapLoaded){sp(10,'Still connecting to Mapbox… check your i
 let playing=false,t=0,last=performance.now(),sm=null,gnd=null,tg=null,ready=false;
 let lastTrainPosition=null;
 let forestTick=()=>{};
+let effectsTick=()=>{};
 // Cinematic camera: camB 0 = normal chase camera, 1 = high overview of the whole corridor. The page opens on the
 // overview; the first Play descends to the chase view (train waits), and arriving at Hamile pulls back out.
 let camB=0,camAnim=null,introHold=false;
-const INTRO_MS=C.INTRO_MS??7000,OUTRO_MS=C.OUTRO_MS??7000;
-const easeIO=u=>u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2;
+// Optional cinematic cameras (key C). 0 = the normal chase camera, which stays the default and is never altered.
+let camMode=0,passAnchor=null;const CAM_NAMES=['Chase (default)','Trackside pass','Station orbit','Helicopter','Head-on'];
+// Live train state shared with the effects (smoke layer, sound, profile strip).
+const trainState={pos:null,alt:0,heading:0,d:0,speed:0,pd:null,pt:0};
+const INTRO_MS=C.INTRO_MS??10000,OUTRO_MS=C.OUTRO_MS??8000;
+const easeIO=u=>-(Math.cos(Math.PI*u)-1)/2;   // gentle sine ease in/out (softer than the old cubic)
 function camAnimate(to,dur,onDone){camAnim={from:camB,to,t0:performance.now(),dur,onDone};}
 function camBlendNow(){
   if(camAnim){const u=(performance.now()-camAnim.t0)/camAnim.dur;
@@ -141,7 +146,7 @@ map.on('load',()=>{
   // centerline via 'line-offset' (a real style-spec property, not a custom pattern image -- simpler and more
   // reliable), and a thin gold centerline kept underneath for brand/official-route identity, low-opacity so it
   // doesn't read as "highlighted" over the rails.
-  map.addLayer({id:'route-brand',type:'line',source:'route',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#fcd116','line-width':9,'line-blur':7,'line-opacity':.18}});
+  map.addLayer({id:'route-brand',type:'line',source:'route',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':C.BRAND_GLOW_COLOR||'#2fdc6a','line-width':9,'line-blur':7,'line-opacity':.2}});
   map.addLayer({id:'route-ballast',type:'line',source:'route',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#453c31','line-width':5.5}});
   map.addLayer({id:'route-ties',type:'line',source:'route',slot:'top',layout:{'line-cap':'butt','line-join':'round'},paint:{'line-color':'#2a241c','line-width':5.5,'line-dasharray':[0.4,0.55]}});
   map.addLayer({id:'route-rail-l',type:'line',source:'route',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#c7ccd3','line-width':0.6,'line-offset':-1.6}});
@@ -174,6 +179,7 @@ map.on('load',()=>{
   // low-poly instances per station (105 total) -- enough for every stop to look built and inhabited rather than
   // a bare dot on the map, without reopening the density/visibility problems the preload and tile cache exist
   // to prevent. Each model's own geometry is already modeled in real-world meters, so model-scale stays [1,1,1].
+  const flagF=[];
   try{
     const IDS=['station','canopy','tree','pole','flag','flag-grda','sign','signal','fence','watertower','wagon','house-a','house-b','house-c','hut','field','person-a','person-b','person-c'];
     IDS.forEach(n=>map.addModel('scenery-'+n,'./models/'+(n==='flag-grda'?'flag-grda':n)+'.glb'));
@@ -202,8 +208,8 @@ map.on('load',()=>{
        const nP=5+Math.floor(pr()*5);
        for(let k=0;k<nP;k++) add(['person-a','person-b','person-c'][Math.floor(pr()*3)],at(o,hd,20.5+pr()*1.6,(pr()-0.5)*11),pr()*360);}
       // Two flags at every station: Ghana + GRDA, side by side, facing the approaching (rear-chase) camera.
-      add('flag',at(o,hd,16,-5),hd);
-      add('flag-grda',at(o,hd,16,5),hd);
+      flagF.push({id:'flag',c:at(o,hd,16,-5),yaw:hd,ph:i*1.7});
+      flagF.push({id:'flag-grda',c:at(o,hd,16,5),yaw:hd,ph:i*1.7+0.9});
       // Signals either side, utility poles, perimeter fence behind the building.
       add('signal',at(o,hd,-9,-60),hd);
       add('signal',at(o,hd,9,60),hd+180);
@@ -334,6 +340,54 @@ map.on('load',()=>{
       map.on('idle',()=>{if(!ready||playing)return;const dd=dOf(t);if(Math.abs(dd-settledD)>0.01&&lastTrainPosition){settledD=dd;refreshForest(lastTrainPosition,dd);}});
     }catch(e){warn('forest setup failed: '+e.message);}
   }
+  // ---- Effects: swaying flags, glowing track pulse, night glow --------------------------------------------------
+  // Every piece is wrapped separately: a problem in one can never stop the page from loading or the splash from
+  // clearing (startup itself never waits on anything in here).
+  const fx={flags:null,pulse:false,last:0};
+  try{
+    const flagFeats=flagF.map(f=>({type:'Feature',geometry:{type:'Point',coordinates:f.c},properties:{modelId:'scenery-'+f.id,rotation:[0,0,f.yaw]}}));
+    map.addSource('flags',{type:'geojson',data:{type:'FeatureCollection',features:flagFeats}});
+    ['flag','flag-grda'].forEach(n=>map.addLayer({id:'flagsrc-'+n,type:'model',source:'flags',slot:'top',minzoom:11,filter:['==',['get','modelId'],'scenery-'+n],layout:{'model-id':'scenery-'+n,'model-allow-density-reduction':false},paint:{'model-elevation-reference':'ground','model-cast-shadows':true,'model-receive-shadows':true,'model-roughness':0.8,'model-rotation':['get','rotation']}}));
+    fx.flags={feats:flagFeats,base:flagF};
+  }catch(e){warn('flags setup: '+e.message);}
+  try{
+    map.addSource('route-pulse',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    map.addLayer({id:'route-pulse',type:'line',source:'route-pulse',slot:'top',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':C.PULSE_COLOR||'#3dff7a','line-width':3.2,'line-blur':1.4,'line-opacity':0.95,'line-emissive-strength':1}});
+    fx.pulse=C.TRACK_PULSE!==false;
+  }catch(e){warn('pulse setup: '+e.message);}
+  effectsTick=(pos,d)=>{
+    const now=performance.now();if(now-fx.last<100)return;fx.last=now;
+    try{window.__extraTick&&window.__extraTick(pos,d);}catch(e){}
+    // Flags flutter only when the train is within ~3km of them (a handful of features, not the whole scenery set).
+    if(fx.flags){
+      const cl=Math.cos(pos[1]*Math.PI/180);let changed=false;
+      fx.flags.feats.forEach((f,i)=>{
+        const c=f.geometry.coordinates;
+        if(Math.hypot((c[0]-pos[0])*cl,c[1]-pos[1])*111>3)return;
+        const b=fx.flags.base[i];f.properties.rotation=[0,0,b.yaw+Math.sin(now/520+b.ph)*10+Math.sin(now/190+b.ph*2)*3];changed=true;
+      });
+      if(changed){const src=map.getSource('flags');if(src)src.setData({type:'FeatureCollection',features:fx.flags.feats});}
+    }
+    // Pulse of light running down the track ahead of the train (hidden in the high overview).
+    if(fx.pulse){
+      const src=map.getSource('route-pulse');
+      if(src){
+        if(camB>0.05||!playing){if(fx.pulseOn){src.setData({type:'FeatureCollection',features:[]});fx.pulseOn=false;}}
+        else{
+          const phase=((now/1000)*0.15)%0.35,feats=[];
+          for(let k=0;k<6;k++){const a=d+0.08+phase+k*0.35,b=a+0.1;if(b>=total)break;
+            try{feats.push(turf.lineSliceAlong(line,a,b,km));}catch(e){}}
+          src.setData({type:'FeatureCollection',features:feats});fx.pulseOn=true;
+        }
+      }
+    }
+  };
+  // Night glow: emissive strength per model layer, driven by the light preset (0 in daylight, so day is unchanged).
+  const GLOW={'train-model-layer':0.3,'scenery-station-layer':0.45,'scenery-canopy-layer':0.4,'scenery-signal-layer':1,'scenery-sign-layer':0.6,'scenery-house-a-layer':0.3,'scenery-house-b-layer':0.3,'scenery-house-c-layer':0.3,'scenery-hut-layer':0.2,'scenery-person-a-layer':0.25,'scenery-person-b-layer':0.25,'scenery-person-c-layer':0.25,'flagsrc-flag':0.5,'flagsrc-flag-grda':0.5,'scenery-watertower-layer':0.2,'scenery-wagon-layer':0.2};
+  window.__applyGlow=name=>{
+    const m={night:1,dusk:0.45,dawn:0.3}[name]||0;
+    Object.keys(GLOW).forEach(id=>{try{if(map.getLayer(id))map.setPaintProperty(id,'model-emissive-strength',GLOW[id]*m);}catch(e){}});
+  };
   // Remove ONLY the ground-level haze that was washing out the terrain -- not the sky itself, and not anything
   // else about the style's fog. setFog() replaces the whole fog object, so start from exactly what the Standard
   // style already has and change nothing but 'color' -- the single term that creates ground-level haze.
@@ -359,7 +413,7 @@ map.on('load',()=>{
     // PRELOAD_KM (config.js): how much of the route to pre-fetch behind the splash screen. The full 765km walk takes
     // minutes (77 steps, each waiting for the map to settle) -- far too long for a live presentation -- so the default is
     // just the first stretch; the rest loads on demand as the train reaches it. PRELOAD_KM:765 restores the full pass.
-    const PRELOAD_KM=Math.min(total,C.PRELOAD_KM??60);
+    const PRELOAD_KM=Math.min(total,C.PRELOAD_KM??30);
     const STEP_KM=10,STEP_DELAY_MS=450,steps=Math.max(1,Math.ceil(PRELOAD_KM/STEP_KM));
     let i=0;
     (function next(){
@@ -392,10 +446,28 @@ map.on('load',()=>{
     ready=true;last=performance.now();
     try{render();}catch(e){}
     try{window.hideSplashScreen();}catch(e){warn('hideSplashScreen: '+e.message);}
+    setTimeout(()=>{try{startExtras();}catch(e){warn('extras: '+e.message);}},1500);
   }
   console.log('[startup] map load fired, preloading');
-  setTimeout(()=>finishStartup('45s time cap'),C.STARTUP_CAP_MS??45000);
-  prewarmRoute(()=>finishStartup('preload complete'));
+  setTimeout(()=>finishStartup('60s time cap'),C.STARTUP_CAP_MS??60000);
+  // The glide from the overview down to Takoradi passes through every zoom level; if those map tiles only start
+  // loading when the glide does, the picture stalls and stutters. So, while the splash is still up, step the camera
+  // down that exact path once so every tile is already cached when the client presses Play.
+  function warmDescent(done){
+    if(C.INTRO===false||aborted){done();return;}
+    const stepsB=[1,0.93,0.85,0.76,0.66,0.56,0.46,0.37,0.28,0.2,0.13,0.07,0.03,0];let i=0;
+    (function next(){
+      if(aborted)return;
+      if(i>=stepsB.length){done();return;}
+      camB=stepsB[i];t=0;sm=null;gnd=null;tg=null;
+      try{render(0);}catch(e){warn('warm descent: '+e.message);}
+      sp(90+Math.round((i/stepsB.length)*9),'Preparing the journey…');
+      i++;
+      let settled=false;const proceed=()=>{if(settled)return;settled=true;map.off('idle',onIdle);setTimeout(next,120);};
+      const onIdle=()=>proceed();map.once('idle',onIdle);setTimeout(proceed,1500);
+    })();
+  }
+  prewarmRoute(()=>warmDescent(()=>finishStartup('preload complete')));
 });
 function render(dForce){
   const p=t/C.DURATION_S,d=(dForce!=null)?dForce:dOf(t),pos=at(d);
@@ -413,13 +485,32 @@ function render(dForce){
   // rear chase only shows the back of the train and the track receding, which reads as a flat overhead shot.
   const back=d-chaseBack;
   const behindPt=back>=0?at(back):turf.destination(at(0),-back,turf.bearing(at(0),at(0.05))+180,km).geometry.coordinates;
-  const camPt=turf.destination(behindPt,CAM_SIDE_M/1000,headingDeg+90,km).geometry.coordinates;
+  let camPt=turf.destination(behindPt,CAM_SIDE_M/1000,headingDeg+90,km).geometry.coordinates;
+  let lookP=pos,camH=C.CAM_HEIGHT_M;
+  if(camMode>0){
+    const nowC=performance.now(),brg=a=>turf.bearing(at(Math.max(0,a-0.05)),at(Math.min(total,a+0.05)));
+    if(camMode===1){            // fixed trackside spot just ahead of the train; moves on to the next spot once passed
+      if(passAnchor==null||d>passAnchor+0.15||d<passAnchor-1.2)passAnchor=Math.min(total,d+0.32);
+      camPt=turf.destination(at(passAnchor),0.022,brg(passAnchor)+90,km).geometry.coordinates;camH=4;
+    }else if(camMode===2){      // slow orbit around the train
+      camPt=turf.destination(pos,0.085,((nowC/1000)*0.3)*180/Math.PI,km).geometry.coordinates;camH=32;
+    }else if(camMode===3){      // helicopter: high, far back, drifting side to side
+      const hb=at(Math.max(0,d-0.55));
+      camPt=turf.destination(hb,0.25*Math.sin(nowC/7000),headingDeg+90,km).geometry.coordinates;camH=170;
+    }else if(camMode===4){      // head-on: low, just ahead of the train, looking back at it
+      camPt=turf.destination(at(Math.min(total,d+0.075)),0.004,headingDeg+90,km).geometry.coordinates;camH=6;
+    }
+  }
   sm=sm?[sm[0]+(camPt[0]-sm[0])*.5,sm[1]+(camPt[1]-sm[1])*.5]:camPt;
   // Height relative to terrain AT THE CAMERA'S OWN POSITION, not a fixed absolute altitude -- and keep the last
   // known-good reading when a tile hasn't loaded yet instead of snapping to sea level (0).
   const g=map.queryTerrainElevation(sm);if(g!=null)gnd=gnd==null?g:gnd+(g-gnd)*.3;
   const tgRaw=map.queryTerrainElevation(pos);if(tgRaw!=null)tg=tg==null?tgRaw:tg+(tgRaw-tg)*.3;
-  const camAlt=(gnd??0)+C.CAM_HEIGHT_M,trainAlt=(tg??0)+TRAIN_LOOK_LIFT_M;
+  const camAlt=(gnd??0)+camH,trainAlt=(tg??0)+TRAIN_LOOK_LIFT_M;
+  trainState.pos=pos;trainState.alt=tg??0;trainState.heading=headingDeg;trainState.d=d;
+  {const nm=performance.now();if(trainState.pd!=null){const dtS=(nm-trainState.pt)/1000;
+    if(dtS>0.001&&dtS<0.5){const dd=Math.abs(d-trainState.pd);trainState.speed=dd>0.3?0:trainState.speed*0.85+(dd*1000/dtS)*0.15;}}
+   trainState.pd=d;trainState.pt=nm;}
   const fc=map.getFreeCameraOptions();
   const bl=camBlendNow();
   if(bl>0.0005){
@@ -429,10 +520,10 @@ function render(dForce){
     const L=(a,b)=>a+(b-a)*bl;
     const pLL=[L(sm[0],ovPos[0]),L(sm[1],ovPos[1])],pAlt=Math.exp(L(Math.log(camAlt),Math.log(ovAlt)));
     fc.position=mapboxgl.MercatorCoordinate.fromLngLat(pLL,pAlt);
-    fc.lookAtPoint({lng:L(pos[0],ovC[0]),lat:L(pos[1],ovC[1]),},[0,0,1],L(trainAlt,0));
+    fc.lookAtPoint({lng:L(lookP[0],ovC[0]),lat:L(lookP[1],ovC[1]),},[0,0,1],L(trainAlt,0));
   }else{
   fc.position=mapboxgl.MercatorCoordinate.fromLngLat(sm,camAlt);
-  fc.lookAtPoint({lng:pos[0],lat:pos[1]},[0,0,1],trainAlt);} // look directly at the train, not behind it -- this is what leaves open track visible ahead of it on screen
+  fc.lookAtPoint({lng:lookP[0],lat:lookP[1]},[0,0,1],trainAlt);} // look directly at the train, not behind it -- this is what leaves open track visible ahead of it on screen
   map.setFreeCameraOptions(fc);
   let i=0;while(i<S.length-1&&cum[i+1]<=d)i++;
   const nx=Math.min(i+1,S.length-1);
@@ -444,7 +535,7 @@ function render(dForce){
   const dwelling=playing&&t<C.DURATION_S&&i>0&&i<S.length-1&&Math.abs(d-cum[i])<1e-6;
   txt('o-status',p>=1?'Arrived':dwelling?'Station stop':playing?'In service':'Paused');
   try{window.__updateBanner&&window.__updateBanner(d);}catch(e){}
-  if(ready)forestTick(pos,d);
+  if(ready&&!introHold){forestTick(pos,d);try{effectsTick(pos,d);}catch(e){}}
 }
 function arrive(){playing=false;if(C.INTRO!==false)camAnimate(1,OUTRO_MS);setHidden('arrive',false);txt('play','▶');}
 function frame(now){const dt=(now-last)/1000;last=now;
@@ -453,10 +544,16 @@ function frame(now){const dt=(now-last)/1000;last=now;
 requestAnimationFrame(frame);
 // Guard these too: same reasoning as the txt()/setHidden()/setWidth() helpers above -- a missing control
 // element shouldn't be able to throw and take the rest of the page down with it.
-function startDescent(){if(camB>0&&!introHold&&!(camAnim&&camAnim.to===0)){introHold=true;camAnimate(0,INTRO_MS,()=>{introHold=false;last=performance.now();});}}
-function togglePlay(){if(t>=C.DURATION_S)return;playing=!playing;if(playing)startDescent();txt('play',playing?'❚❚':'▶');}
+function startDescent(){if(camB>0&&!introHold&&!(camAnim&&camAnim.to===0)){introHold=true;camAnimate(0,INTRO_MS,()=>{introHold=false;last=performance.now();try{window.__say&&window.__say('Ready at Takoradi · press Space or ▶ to start the journey');}catch(e){}});}}
+function togglePlay(){
+  if(t>=C.DURATION_S)return;
+  if(introHold)return;                                   // camera is still gliding down: ignore presses
+  if(camB>0.001&&!playing){startDescent();try{soundInit();}catch(e){}return;}   // 1st press: glide to Takoradi and WAIT
+  playing=!playing;if(playing){try{soundInit();}catch(e){}}
+  txt('play',playing?'❚❚':'▶');
+}
 if($('play'))$('play').onclick=togglePlay;
-const restart=()=>{t=0;sm=null;playing=true;setHidden('arrive',true);txt('play','❚❚');camAnim=null;introHold=false;if(camB>0)startDescent();};
+const restart=()=>{t=0;sm=null;setHidden('arrive',true);camAnim=null;introHold=false;if(camB>0.001){playing=false;txt('play','▶');startDescent();}else{playing=true;txt('play','❚❚');}};
 if($('restart'))$('restart').onclick=restart;
 if($('again'))$('again').onclick=restart;
 const track=$('prog-track');
@@ -506,14 +603,15 @@ if(track){
 // ---- Presentation controls (keyboard) ----------------------------------------------------------------------------
 //  P presentation mode (hides panels, cursor; mouse move brings the controls back)   Space play/pause
 //  N next station   B previous station   L cycle light (day/dusk/night/dawn)   F fullscreen
+//  R rain on/off   , . turn the sun   [ ] sun height   0 reset sun   C camera view   M sound on/off
 const arrT=i=>i<=0?0:(segs[i-1].t0+segs[i-1].T);
 function jumpToT(tt){
   t=Math.max(0,Math.min(C.DURATION_S,tt));camAnim=null;camB=0;introHold=false;sm=null;gnd=null;tg=null;
   setHidden('arrive',true);last=performance.now();
   if(ready){try{render();}catch(e){warn('jump render: '+e.message);}}
 }
-const PRESETS=['day','dusk','night','dawn'];let presetNow='day';
-function setPreset(name){if(name===presetNow)return;presetNow=name;try{map.setConfigProperty('basemap','lightPreset',name);}catch(e){warn('lightPreset: '+e.message);}}
+const PRESETS=['day','dusk','night','dawn'];let presetNow='day',rainOn=false,sunAz=210,sunPol=45;
+function setPreset(name){if(name===presetNow)return;presetNow=name;try{map.setConfigProperty('basemap','lightPreset',name);}catch(e){warn('lightPreset: '+e.message);}try{window.__applyGlow&&window.__applyGlow(name);}catch(e){}}
 const _tod=C.TIME_OF_DAY_JOURNEY===true;
 if(_tod)setInterval(()=>{if(!ready)return;const p=t/C.DURATION_S;setPreset(p<0.08?'dawn':p<0.72?'day':'dusk');},1500);
 (function(){
@@ -524,7 +622,8 @@ if(_tod)setInterval(()=>{if(!ready)return;const p=t/C.DURATION_S;setPreset(p<0.0
   let tt=null;const say=m=>{toast.textContent=m;toast.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>toast.classList.remove('on'),3500);};
   let uiT=null;
   document.addEventListener('mousemove',()=>{if(!document.body.classList.contains('present'))return;document.body.classList.add('ui');clearTimeout(uiT);uiT=setTimeout(()=>document.body.classList.remove('ui'),2500);});
-  const setPresent=on=>{document.body.classList.toggle('present',on);document.body.classList.remove('ui');if(on)say('Presentation mode · Space play/pause · N / B next / previous station · L light · F fullscreen · P exit');};
+  window.__say=say;
+  const setPresent=on=>{document.body.classList.toggle('present',on);document.body.classList.remove('ui');if(on)say('Presentation mode · Space play/pause · N / B station · C camera · M sound · L light · R rain · , . [ ] sun · F fullscreen · P exit');};
   if(/[?&]present/.test(location.search))setPresent(true);
   document.addEventListener('keydown',e=>{
     if(e.ctrlKey||e.metaKey||e.altKey)return;
@@ -539,7 +638,240 @@ if(_tod)setInterval(()=>{if(!ready)return;const p=t/C.DURATION_S;setPreset(p<0.0
       if(target>=0){jumpToT(arrT(target));say((target===0?'Start: ':'Station: ')+S[target].name);}
     }
     else if(k==='l'){setPreset(PRESETS[(PRESETS.indexOf(presetNow)+1)%PRESETS.length]);say('Light: '+presetNow);}
+    else if(k==='r'){rainOn=!rainOn;try{map.setRain(rainOn?{density:0.85,intensity:0.7,opacity:0.7,color:'#b9c6d4'}:null);say(rainOn?'Rain: on':'Rain: off');}catch(err){rainOn=false;say('Rain is not available here');warn('rain: '+err.message);}}
+    else if(k===','||k==='.'||k==='['||k===']'){
+      if(k===',')sunAz=(sunAz+335)%360;else if(k==='.')sunAz=(sunAz+25)%360;else if(k==='[')sunPol=Math.max(10,sunPol-8);else sunPol=Math.min(85,sunPol+8);
+      try{map.setLights([{id:'amb',type:'ambient',properties:{color:'#ffffff',intensity:0.5}},{id:'sun',type:'directional',properties:{direction:[sunAz,sunPol],color:'#fff3df',intensity:0.8,'cast-shadows':true,'shadow-intensity':0.9}}]);say('Sun · direction '+Math.round(sunAz)+'° · height '+Math.round(90-sunPol)+'°  (0 = reset)');}catch(err){say('Sun control is not available here');warn('setLights: '+err.message);}}
+    else if(k==='0'){try{map.setLights(null);map.setConfigProperty('basemap','lightPreset',presetNow);say('Sun reset');}catch(err){warn('sun reset: '+err.message);}}
+    else if(k==='c'){camMode=(camMode+1)%CAM_NAMES.length;passAnchor=null;sm=null;say('Camera: '+CAM_NAMES[camMode]+(camMode?'  (C = next, cycles back to Chase)':''));}
+    else if(k==='m'){const on=toggleSound();say(on?'Sound: on':'Sound: off');}
     else if(k==='f'){try{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}catch(_){}}
   });
 })();
+
+// =====================================================================================================================
+// EXTRAS (all started AFTER the splash has cleared; every part is wrapped so a failure can never affect the page):
+//   1. Smoke + wheel dust (three.js drawn inside the Mapbox map as a custom layer)
+//   2. Sound (generated in the browser: rumble, rail clatter, horn, station chime)
+//   3. Elevation strip + mini-map
+// =====================================================================================================================
+function loadScript(urls){
+  return new Promise((res,rej)=>{let i=0;
+    const next=()=>{if(i>=urls.length){rej(new Error('script could not be loaded'));return;}
+      const sc=document.createElement('script');sc.src=urls[i++];sc.async=true;sc.onload=()=>res();sc.onerror=()=>{sc.remove();next();};document.head.appendChild(sc);};
+    next();});
+}
+function startExtras(){
+  try{startSmoke();}catch(e){warn('smoke start: '+e.message);}
+  try{startProfile();}catch(e){warn('profile start: '+e.message);}
+  window.__extraTick=(pos,d)=>{try{if(prof.el)drawProfile(pos,d);}catch(e){}try{soundTick(d);}catch(e){}};
+}
+
+// ---------------------------------------------------------------- 1. smoke + dust
+function startSmoke(){
+  if(C.DUST===false||window.__smokeStarted)return;   // this layer now draws the wheel dust (smoke is off unless SMOKE:true)window.__smokeStarted=true;
+  loadScript(['https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js','https://unpkg.com/three@0.149.0/build/three.min.js']).then(()=>{
+    const THREE=window.THREE;if(!THREE)throw new Error('three.js missing');
+    const layer=makeSmokeLayer(THREE);
+    map.addLayer(layer);
+    console.log('[fx] smoke + dust layer added');
+  }).catch(e=>warn('smoke/dust unavailable: '+e.message));
+}
+function makeSmokeLayer(THREE){
+  const SMOKE_N=140,DUST_N=90;
+  return {
+    id:'train-fx',type:'custom',renderingMode:'3d',slot:'top',
+    onAdd(m,gl){
+      this.map=m;this.camera=new THREE.Camera();this.scene=new THREE.Scene();
+      this.renderer=new THREE.WebGLRenderer({canvas:m.getCanvas(),context:gl,antialias:true});
+      this.renderer.autoClear=false;
+      const geo=new THREE.IcosahedronGeometry(1,1);
+      const mk=(n,col)=>{const a=[];for(let i=0;i<n;i++){
+        const mat=new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
+        const mesh=new THREE.Mesh(geo,mat);mesh.visible=false;this.scene.add(mesh);
+        a.push({mesh,mat,alive:false,age:0,life:1,vx:0,vy:0,vz:0,s0:1,s1:1,o0:.3,kind:0});}return a;};
+      this.smoke=mk(SMOKE_N,0x333333);this.dust=mk(DUST_N,0xb59b78);
+      this.accS=0;this.accD=0;this.prev=null;this.t0=null;
+    },
+    render(gl,matrix){
+      const ts=trainState;const now=performance.now();
+      const dt=this.t0==null?0.016:Math.min(0.1,Math.max(0.001,(now-this.t0)/1000));this.t0=now;
+      const all=this.smoke.concat(this.dust);
+      if(!ts.pos||camB>0.4||(C.DUST===false)){all.forEach(p=>{p.alive=false;p.mesh.visible=false;});this.prev=null;return;}
+      const m0=mapboxgl.MercatorCoordinate.fromLngLat(ts.pos,ts.alt);
+      const unit=m0.meterInMercatorCoordinateUnits();
+      // Keep every particle fixed in the WORLD while the origin (the train) moves: shift them by minus the train's step.
+      if(this.prev){
+        const dx=(m0.x-this.prev.x)/unit,dy=-(m0.y-this.prev.y)/unit,dz=ts.alt-(this.prevAlt??ts.alt);
+        if(Math.hypot(dx,dy)>400){all.forEach(p=>{p.alive=false;p.mesh.visible=false;});}
+        else all.forEach(p=>{if(p.alive){p.mesh.position.x-=dx;p.mesh.position.y-=dy;p.mesh.position.z-=dz;}});
+      }
+      this.prev={x:m0.x,y:m0.y};this.prevAlt=ts.alt;
+      const h=ts.heading*Math.PI/180,fx=Math.sin(h),fy=Math.cos(h),rx=Math.cos(h),ry=-Math.sin(h);
+      const speed=ts.speed,moving=speed>2,night=(presetNow==='night')?0.35:(presetNow==='dusk'||presetNow==='dawn')?0.7:1;
+      const rate=(C.SMOKE===true)?(C.SMOKE_RATE??(moving?22:8)):0;   // smoke removed by default
+      this.accS+=rate*dt;
+      while(this.accS>=1){this.accS-=1;
+        const p=this.smoke.find(q=>!q.alive);if(!p)break;
+        // The locomotive's exhaust sits ~4.5m behind the model origin (the nose) and ~5m up on the roof.
+        p.mesh.position.set(-fx*4.5+(Math.random()-.5)*.5,-fy*4.5+(Math.random()-.5)*.5,5.1);
+        p.vx=fx*speed*0.12+1.2;p.vy=fy*speed*0.12;p.vz=2.0+Math.random()*1.2;
+        p.s0=0.7+Math.random()*.4;p.s1=5.5+Math.random()*2.5;p.life=4.8+Math.random()*1.6;p.o0=0.36;p.age=0;p.alive=true;p.kind=0;p.mesh.visible=true;
+      }
+      if(speed>12){
+        this.accD+=Math.min(30,speed*0.22)*dt;
+        while(this.accD>=1){this.accD-=1;
+          const p=this.dust.find(q=>!q.alive);if(!p)break;
+          const along=2+Math.random()*60,side=(Math.random()<.5?-1:1)*(1.3+Math.random()*.6);
+          p.mesh.position.set(-fx*along+rx*side,-fy*along+ry*side,0.3);
+          p.vx=rx*side*0.8;p.vy=ry*side*0.8;p.vz=0.7+Math.random()*.8;
+          p.s0=0.3;p.s1=2.0+Math.random()*1.2;p.life=1.8+Math.random()*.8;p.o0=0.22;p.age=0;p.alive=true;p.kind=1;p.mesh.visible=true;
+        }
+      }
+      for(const p of all){
+        if(!p.alive)continue;
+        p.age+=dt;const u=p.age/p.life;
+        if(u>=1){p.alive=false;p.mesh.visible=false;continue;}
+        p.mesh.position.x+=p.vx*dt;p.mesh.position.y+=p.vy*dt;p.mesh.position.z+=p.vz*dt;
+        p.vz*=1-0.35*dt;p.vx*=1-0.5*dt;p.vy*=1-0.5*dt;
+        const sc=p.s0+(p.s1-p.s0)*Math.pow(u,0.7);p.mesh.scale.set(sc,sc,sc);
+        p.mat.opacity=p.o0*Math.pow(1-u,1.3)*(u<0.06?u/0.06:1);
+        const c=p.kind===0?(0.17+0.33*u)*night:(0.72*night);
+        if(p.kind===0)p.mat.color.setRGB(c,c,c);else p.mat.color.setRGB(0.71*night,0.61*night,0.47*night);
+      }
+      const mm=new THREE.Matrix4().fromArray(matrix);
+      const l=new THREE.Matrix4().makeTranslation(m0.x,m0.y,m0.z).scale(new THREE.Vector3(unit,-unit,unit));
+      this.camera.projectionMatrix=mm.multiply(l);
+      if(this.renderer.resetState)this.renderer.resetState();else this.renderer.state.reset();
+      this.renderer.render(this.scene,this.camera);
+      this.map.triggerRepaint();
+    }
+  };
+}
+
+// ---------------------------------------------------------------- 2. sound (REAL recordings only)
+// Put real recordings in a `sounds` folder next to index.html:
+//   sounds/train-loop.mp3     a seamless loop of a train running (engine rumble + rail clatter)
+//   sounds/train-horn.mp3     one locomotive horn blast (played as the train nears each station)
+//   sounds/station-arrive.mp3 (optional) brake squeal / bell for the moment the train stops
+// (.ogg works too.) With no files the page is simply silent -- nothing synthetic is ever played.
+const SND_BASE=C.SOUND_BASE||'./sounds/';
+const snd={ctx:null,on:C.SOUND!==false,n:null,bufs:{},horned:{},atSt:false};
+function sndLoad(base){
+  const exts=['mp3','ogg'];let i=0;
+  const tryNext=()=>{
+    if(i>=exts.length)return Promise.resolve(null);
+    const url=SND_BASE+base+'.'+exts[i++];
+    return fetch(url).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.arrayBuffer();})
+      .then(b=>new Promise((res,rej)=>snd.ctx.decodeAudioData(b,res,rej))).catch(()=>tryNext());
+  };
+  return tryNext();
+}
+function soundInit(){
+  if(!snd.on)return;
+  try{
+    if(snd.ctx){if(snd.ctx.state==='suspended')snd.ctx.resume();return;}
+    const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    const ctx=new AC();snd.ctx=ctx;
+    const master=ctx.createGain();master.gain.value=0;master.connect(ctx.destination);
+    snd.n={master,loopG:null,src:null};
+    Promise.all([sndLoad('train-loop'),sndLoad('train-horn'),sndLoad('station-arrive')]).then(([lp,hn,ar])=>{
+      snd.bufs={lp,hn,ar};
+      if(lp){const src=ctx.createBufferSource();src.buffer=lp;src.loop=true;const g=ctx.createGain();g.gain.value=0;src.connect(g);g.connect(master);src.start();snd.n.src=src;snd.n.loopG=g;}
+      console.log('[sound] recordings found:',[lp&&'train-loop',hn&&'train-horn',ar&&'station-arrive'].filter(Boolean).join(', ')||'none (silent)');
+    }).catch(e=>warn('sound load: '+e.message));
+  }catch(e){warn('sound: '+e.message);snd.ctx=null;}
+}
+function soundOnce(buf,gain){
+  const ctx=snd.ctx;if(!ctx||!snd.n||!buf)return;
+  const src=ctx.createBufferSource();src.buffer=buf;const g=ctx.createGain();g.gain.value=gain;src.connect(g);g.connect(snd.n.master);src.start();
+}
+function soundTick(d){
+  if(!snd.ctx||!snd.n)return;
+  const n=snd.n,ctx=snd.ctx,T=ctx.currentTime;
+  const run=playing&&!introHold&&camB<0.6;
+  const v=run?trainState.speed:0,k=Math.min(1,v/70);
+  const vis=document.hidden?0:1,out=(snd.on?1:0)*vis*(camB>0.3?0.35:1);
+  n.master.gain.setTargetAtTime(0.9*out,T,0.25);
+  if(n.loopG){
+    n.loopG.gain.setTargetAtTime(run?(0.12+0.88*k):0,T,0.35);
+    n.src.playbackRate.setTargetAtTime(0.8+0.4*k,T,0.5);   // slower when pulling away / braking, faster at speed
+  }
+  if(!run||!snd.on)return;
+  for(let i=1;i<S.length;i++){
+    if(!snd.horned[i]&&d>cum[i]-0.78&&d<cum[i]-0.55){snd.horned[i]=true;soundOnce(snd.bufs.hn,0.9);}
+    else if(snd.horned[i]&&d<cum[i]-1.6)snd.horned[i]=false;
+  }
+  let atSt=false;for(let i=1;i<S.length;i++)if(Math.abs(d-cum[i])<0.002){atSt=true;break;}
+  if(atSt&&!snd.atSt)soundOnce(snd.bufs.ar,0.8);snd.atSt=atSt;
+}
+function toggleSound(){snd.on=!snd.on;if(snd.on)soundInit();return snd.on;}
+
+// ---------------------------------------------------------------- 3. elevation strip + mini-map
+const prof={el:null,canvas:null,ctx:null,N:200,tries:0,filled:0};
+function startProfile(){
+  if(C.PROFILE!==true||prof.el)return;   // elevation strip + mini-map removed by default (set PROFILE:true to bring it back)
+  const st=document.createElement('style');
+  st.textContent='#jprof{position:fixed;left:362px;right:18px;bottom:calc(17px + env(safe-area-inset-bottom));height:64px;z-index:15;pointer-events:none;border-radius:16px;background:rgba(5,13,19,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(252,209,22,.17);overflow:hidden;opacity:0;transition:opacity .6s}#jprof.on{opacity:1}#jprof canvas{width:100%;height:100%;display:block}@media (max-width:900px){#jprof{display:none}}';
+  document.head.appendChild(st);
+  const box=document.createElement('div');box.id='jprof';const cv=document.createElement('canvas');box.appendChild(cv);document.body.appendChild(box);
+  prof.box=box;prof.canvas=cv;prof.ctx=cv.getContext('2d');prof.el=new Array(prof.N).fill(null);
+  const sample=()=>{
+    let f=0;
+    for(let i=0;i<prof.N;i++){
+      if(prof.el[i]==null){let e=null;try{e=map.queryTerrainElevation(at(i/(prof.N-1)*total));}catch(_){}if(e!=null&&isFinite(e))prof.el[i]=e;}
+      if(prof.el[i]!=null)f++;
+    }
+    prof.filled=f;prof.tries++;
+    return f>=prof.N*0.97||prof.tries>=12;
+  };
+  // Terrain tiles at the high overview already cover the whole corridor, so this fills the profile within a few
+  // 'idle' events; whatever is still missing is filled in as the journey passes it.
+  const onIdle=()=>{if(sample())map.off('idle',onIdle);};
+  map.on('idle',onIdle);setTimeout(sample,800);
+}
+function drawProfile(pos,d){
+  const cv=prof.canvas,g=prof.ctx;if(!cv||!g)return;
+  // fill in single samples as the train passes them
+  {const i=Math.round(d/total*(prof.N-1));if(prof.el[i]==null&&trainState.alt!=null&&isFinite(trainState.alt)&&trainState.alt!==0)prof.el[i]=trainState.alt;}
+  const vals=prof.el.filter(v=>v!=null);
+  const show=vals.length>prof.N*0.4;prof.box.classList.toggle('on',show);if(!show)return;
+  const dpr=window.devicePixelRatio||1,r=cv.getBoundingClientRect(),W=Math.round(r.width*dpr),H=Math.round(r.height*dpr);
+  if(!W||!H)return;if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
+  g.clearRect(0,0,W,H);
+  const pad=8*dpr,mapW=H-2*pad;
+  // ---- mini-map (left)
+  const lo=S.map(s=>s.lngLat);let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;lo.forEach(c=>{x0=Math.min(x0,c[0]);x1=Math.max(x1,c[0]);y0=Math.min(y0,c[1]);y1=Math.max(y1,c[1]);});
+  const cl=Math.cos(((y0+y1)/2)*Math.PI/180),sx=(x1-x0)*cl||1,sy=(y1-y0)||1,k=Math.min((mapW*0.7)/sx,mapW/sy);
+  const ox=pad+mapW/2-(sx*k)/2,oy=pad+mapW/2+(sy*k)/2;
+  const P=c=>[ox+((c[0]-x0)*cl)*k,oy-((c[1]-y0))*k];
+  g.lineWidth=2*dpr;g.lineCap='round';g.lineJoin='round';
+  g.strokeStyle='rgba(255,255,255,.28)';g.beginPath();lo.forEach((c,i)=>{const q=P(c);i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]);});g.stroke();
+  // travelled part
+  g.strokeStyle='#fcd116';g.beginPath();g.moveTo(...P(lo[0]));
+  let idx=0;while(idx<S.length-1&&cum[idx+1]<=d){idx++;g.lineTo(...P(lo[idx]));}
+  g.lineTo(...P(pos));g.stroke();
+  lo.forEach(c=>{const q=P(c);g.fillStyle='rgba(255,255,255,.75)';g.beginPath();g.arc(q[0],q[1],1.6*dpr,0,7);g.fill();});
+  {const q=P(pos),pl=(Math.sin(performance.now()/300)+1)/2;g.fillStyle='#ce1126';g.beginPath();g.arc(q[0],q[1],(3+pl)*dpr,0,7);g.fill();g.strokeStyle='#fff';g.lineWidth=1.2*dpr;g.stroke();}
+  // ---- elevation profile (right)
+  const px0=mapW+pad*2.5,px1=W-pad*1.5,py0=pad*1.6,py1=H-pad*1.6,pw=px1-px0,ph=py1-py0;
+  const mx=Math.max(50,...vals),mn=Math.min(0,...vals);
+  const X=i=>px0+(i/(prof.N-1))*pw,Y=v=>py1-((v-mn)/(mx-mn))*ph*0.92;
+  const pts=[];prof.el.forEach((v,i)=>{if(v!=null)pts.push([X(i),Y(v)]);});
+  const frac=d/total,cx=px0+frac*pw;
+  const area=(clipTo)=>{g.beginPath();g.moveTo(pts[0][0],py1);pts.forEach(p=>g.lineTo(p[0],p[1]));g.lineTo(pts[pts.length-1][0],py1);g.closePath();};
+  g.save();g.beginPath();g.rect(px0,0,pw,H);g.clip();
+  area();g.fillStyle='rgba(255,255,255,.10)';g.fill();
+  g.save();g.beginPath();g.rect(px0,0,cx-px0,H);g.clip();area();const gr=g.createLinearGradient(0,py0,0,py1);gr.addColorStop(0,'rgba(61,255,122,.75)');gr.addColorStop(1,'rgba(0,107,63,.35)');g.fillStyle=gr;g.fill();g.restore();
+  g.strokeStyle='rgba(255,255,255,.55)';g.lineWidth=1.2*dpr;g.beginPath();pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.stroke();
+  g.restore();
+  // station ticks
+  S.forEach((s,i)=>{const x=px0+(cum[i]/total)*pw;g.fillStyle=i<=idx?'#fcd116':'rgba(255,255,255,.5)';g.fillRect(x-0.5*dpr,py1-4*dpr,1*dpr,4*dpr);});
+  // train marker at the current elevation
+  {let ei=Math.round(frac*(prof.N-1)),ev=null;for(let o=0;o<30&&ev==null;o++){ev=prof.el[Math.min(prof.N-1,ei+o)]??prof.el[Math.max(0,ei-o)];}
+   const y=ev==null?py1:Y(ev);g.fillStyle='#ce1126';g.strokeStyle='#fff';g.lineWidth=1.2*dpr;g.beginPath();g.arc(cx,y,3.4*dpr,0,7);g.fill();g.stroke();
+   g.fillStyle='rgba(255,255,255,.85)';g.font=(10*dpr)+'px Inter,system-ui,sans-serif';g.textBaseline='top';g.textAlign='left';
+   g.fillText('ELEVATION  '+(ev==null?'':Math.round(ev)+' m'),px0,3*dpr);
+   g.textAlign='right';g.fillStyle='rgba(255,255,255,.5)';g.fillText('peak '+Math.round(mx)+' m',px1,3*dpr);}
+}
 })();
